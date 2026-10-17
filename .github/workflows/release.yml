@@ -269,7 +269,7 @@ jobs:
       - name: Verify release archive lifecycle on native Windows ARM64
         if: matrix.os == 'windows-11-arm'
         shell: bash
-        run: bash scripts/verify-release.sh dist
+        run: bash scripts/verify-release.sh dist "" "${{ matrix.target }}"
 
       - name: Verify Windows installer lifecycle
         if: runner.os == 'Windows'

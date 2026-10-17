@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-dist_dir="${1:?usage: verify-release.sh <release-dir> [verified-reference-binary]}"
+dist_dir="${1:?usage: verify-release.sh <release-dir> [verified-reference-binary] [expected-target]}"
 reference_binary="${2:-}"
+expected_target="${3:-}"
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 version="$(sed -n 's/^# version=//p' "$dist_dir/SHA256SUMS" | head -1)"
 if [[ -z "$version" ]]; then
@@ -48,11 +49,6 @@ fi
 
 host_os="$(uname -s)"
 host_arch="$(uname -m)"
-native_windows_arch="${PROCESSOR_ARCHITECTURE:-$host_arch}"
-if [[ "$host_os" == MINGW* || "$host_os" == MSYS* || "$host_os" == CYGWIN* ]]; then
-  queried_windows_arch="$(powershell.exe -NoProfile -Command '[System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()' 2>/dev/null | tr -d '\r\n' || true)"
-  [[ -z "$queried_windows_arch" ]] || native_windows_arch="$queried_windows_arch"
-fi
 windows_host=false
 case "$host_os:$host_arch" in
   Linux:x86_64) asset="komposyn-lg_${version}_linux_amd64.tar.gz" ;;
@@ -61,7 +57,7 @@ case "$host_os:$host_arch" in
   Darwin:arm64) asset="komposyn-lg_${version}_darwin_arm64.tar.gz" ;;
   MINGW64_NT*:x86_64|MSYS_NT*:x86_64|CYGWIN_NT*:x86_64|MINGWARM64_NT*:aarch64|MINGWARM64_NT*:arm64|MSYS_NT*:aarch64|MSYS_NT*:arm64|CYGWIN_NT*:aarch64|CYGWIN_NT*:arm64)
     windows_arch=amd64
-    case "${native_windows_arch,,}" in ARM64|ARM64EC|aarch64|arm64) windows_arch=arm64 ;; esac
+    case "$expected_target" in windows_amd64|windows_arm64) windows_arch="${expected_target#windows_}" ;; esac
     asset="komposyn-lg_${version}_windows_${windows_arch}.zip"
     windows_host=true
     ;;
@@ -104,6 +100,10 @@ target="${target%.tar.gz}"
 target="${target%.zip}"
 target_os="${target%%_*}"
 target_arch="${target#*_}"
+if [[ -n "$expected_target" && "$target" != "$expected_target" ]]; then
+  echo "release target $target does not match expected native target $expected_target" >&2
+  exit 1
+fi
 metadata_binary="$binary_path"
 if [[ "$windows_host" == true ]]; then
   metadata_binary="$(cygpath -w "$binary_path")"

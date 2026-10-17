@@ -9,18 +9,13 @@ identity='^https://github.com/ayeshLK/komposyn/.github/workflows/release.yml@ref
 issuer='https://token.actions.githubusercontent.com'
 host_os="$(uname -s)"
 host_arch="$(uname -m)"
-native_windows_arch="${PROCESSOR_ARCHITECTURE:-$host_arch}"
-if [[ "$host_os" == MINGW* || "$host_os" == MSYS* || "$host_os" == CYGWIN* ]]; then
-	queried_windows_arch="$(powershell.exe -NoProfile -Command '[System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()' 2>/dev/null | tr -d '\r\n' || true)"
-	[[ -z "$queried_windows_arch" ]] || native_windows_arch="$queried_windows_arch"
-fi
 case "$host_os:$host_arch" in
 	Linux:x86_64|Linux:amd64) target=linux_amd64; archive_suffix=tar.gz; executable=komposyn-lg ;;
 	Linux:aarch64|Linux:arm64) target=linux_arm64; archive_suffix=tar.gz; executable=komposyn-lg ;;
 	Darwin:x86_64) target=darwin_amd64; archive_suffix=tar.gz; executable=komposyn-lg ;;
 	Darwin:arm64) target=darwin_arm64; archive_suffix=tar.gz; executable=komposyn-lg ;;
 	MINGW64_NT*:x86_64|MSYS_NT*:x86_64|CYGWIN_NT*:x86_64|MINGWARM64_NT*:aarch64|MINGWARM64_NT*:arm64|MSYS_NT*:aarch64|MSYS_NT*:arm64|CYGWIN_NT*:aarch64|CYGWIN_NT*:arm64)
-		case "${native_windows_arch,,}" in ARM64|ARM64EC|aarch64|arm64) target=windows_arm64 ;; *) target=windows_amd64 ;; esac
+		case "$expected_target" in windows_amd64|windows_arm64) target="$expected_target" ;; *) target=windows_amd64 ;; esac
 		archive_suffix=zip; executable=komposyn-lg.exe ;;
 	*) echo "unsupported native historical fixture host: $host_os/$host_arch" >&2; exit 1 ;;
 esac
@@ -65,5 +60,5 @@ verify_release_assets() {
 
 v060_binary="$(verify_release_assets v0.6.0 "$temp_dir/v0.6.0" "komposyn-lg_0.6.0_${target}.${archive_suffix}")"
 v070_binary="$(verify_release_assets v0.7.0 "$temp_dir/v0.7.0" "komposyn-lg_0.7.0_${target}.${archive_suffix}")"
-bash "$(dirname "${BASH_SOURCE[0]}")/verify-release.sh" "$candidate_dir" "$v060_binary"
-bash "$(dirname "${BASH_SOURCE[0]}")/verify-release.sh" "$candidate_dir" "$v070_binary"
+bash "$(dirname "${BASH_SOURCE[0]}")/verify-release.sh" "$candidate_dir" "$v060_binary" "$target"
+bash "$(dirname "${BASH_SOURCE[0]}")/verify-release.sh" "$candidate_dir" "$v070_binary" "$target"
