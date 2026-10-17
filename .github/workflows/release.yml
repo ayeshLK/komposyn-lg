@@ -276,6 +276,7 @@ jobs:
         env:
           KOMPOSYN_VERSION: ${{ needs.prepare.outputs.tag }}
           KOMPOSYN_RELEASE_DIR: ${{ github.workspace }}/dist
+          EXPECTED_TARGET: ${{ matrix.target }}
         shell: pwsh
         run: |
           $env:KOMPOSYN_INSTALL_DIR = Join-Path $env:RUNNER_TEMP 'komposyn-bin'
@@ -283,6 +284,9 @@ jobs:
           & ./scripts/install.ps1
           $binary = Join-Path $env:KOMPOSYN_INSTALL_DIR 'komposyn-lg.exe'
           & $binary version
+          $expectedGoArch = if ($env:EXPECTED_TARGET -eq 'windows_arm64') { 'arm64' } else { 'amd64' }
+          $metadata = (& go version -m $binary | Out-String)
+          if ($metadata -notmatch 'GOOS=windows' -or $metadata -notmatch "GOARCH=$expectedGoArch") { throw "installer selected the wrong native archive for $env:EXPECTED_TARGET`n$metadata" }
           & $binary settings --collector off --auto-start off
           & $binary usage --format json | Out-Null
           $source = Join-Path $env:RUNNER_TEMP 'komposyn-source'
@@ -378,6 +382,7 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          EXPECTED_TARGET: ${{ matrix.target }}
         run: ./scripts/verify-active-signed-candidate-upgrade.ps1 -OldTag v0.6.0 -CandidateDir dist
 
   publish:

@@ -33,7 +33,10 @@ $dataDir = Join-Path $temp 'data'
 $sourceDir = Join-Path $temp 'source'
 $binary = Join-Path $installDir 'komposyn-lg.exe'
 $candidateDir = (Resolve-Path -LiteralPath $CandidateDir).Path
-$target = if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64') { 'windows_arm64' } else { 'windows_amd64' }
+$windowsArchitectureHelper = Join-Path $PSScriptRoot 'windows-architecture.ps1'
+. $windowsArchitectureHelper
+$target = "windows_$(Get-KomposynWindowsArchitecture)"
+if ($env:EXPECTED_TARGET -and $env:EXPECTED_TARGET -ne $target) { throw "detected native Windows target $target does not match runner matrix $env:EXPECTED_TARGET" }
 $candidateVersion = ((Get-Content (Join-Path $candidateDir 'SHA256SUMS') | Select-Object -First 1) -replace '^# version=v?','').Trim()
 New-Item -ItemType Directory -Path $oldDir,$installDir,$dataDir,$sourceDir -Force | Out-Null
 function Invoke-CLI([string[]]$Arguments) {
@@ -113,6 +116,9 @@ db.commit()
     if ($newStatus.pid -eq $oldPid -or $newStatus.instance_id -eq $oldInstance) { throw 'collector did not restart under a new process and lease identity' }
     if (Get-Process -Id $oldPid -ErrorAction SilentlyContinue) { throw 'historical collector process survived cooperative stop' }
     Get-Process -Id $newStatus.pid -ErrorAction Stop | Out-Null
+    $nativeMetadata = (& go version -m $binary | Out-String)
+    $expectedGoArch = if ($target -eq 'windows_arm64') { 'arm64' } else { 'amd64' }
+    if ($nativeMetadata -notmatch "GOOS=windows" -or $nativeMetadata -notmatch "GOARCH=$expectedGoArch") { throw "installed candidate architecture differs from native target $target`n$nativeMetadata" }
     $after = Get-UsageSignature (Invoke-CLI @('usage','--format','json') | Out-String)
     if ($after -ne $before) { throw "usage totals changed during upgrade: before=$before after=$after" }
     $afterSettings = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $dataDir 'settings.json')).Hash

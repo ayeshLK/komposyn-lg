@@ -28,7 +28,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $files = @('./scripts/verify-active-signed-candidate-upgrade.ps1')
+          $files = @('./scripts/verify-active-signed-candidate-upgrade.ps1','./scripts/windows-architecture.ps1','./scripts/test-release-resolution.ps1')
           foreach ($file in $files) {
             $errors = $null
             [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file), [ref]$null, [ref]$errors) | Out-Null

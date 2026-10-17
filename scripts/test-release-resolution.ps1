@@ -4,7 +4,16 @@ $releaseDir = Join-Path $temp 'release'
 $installDir = Join-Path $temp 'install'
 New-Item -ItemType Directory -Path $releaseDir, $installDir -Force | Out-Null
 try {
-    $windowsArch = if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq [System.Runtime.InteropServices.Architecture]::Arm64) { 'arm64' } else { 'amd64' }
+    . (Join-Path $PSScriptRoot 'windows-architecture.ps1')
+    foreach ($case in @(
+        @{ Runtime = 'AMD64'; System = 'ARM64'; Expected = 'arm64' },
+        @{ Runtime = 'Arm64'; System = 'AMD64'; Expected = 'arm64' },
+        @{ Runtime = 'X64'; System = 'AMD64'; Expected = 'amd64' }
+    )) {
+        $resolved = Resolve-KomposynWindowsArchitecture -RuntimeArchitecture $case.Runtime -SystemArchitecture $case.System
+        if ($resolved -ne $case.Expected) { throw "Windows architecture resolution failed for runtime=$($case.Runtime), system=$($case.System): $resolved" }
+    }
+    $windowsArch = Get-KomposynWindowsArchitecture
     $asset = "komposyn-lg_1.2.3_windows_${windowsArch}.zip"
     $payloadDir = Join-Path $temp 'payload'
     New-Item -ItemType Directory -Path $payloadDir | Out-Null
@@ -77,6 +86,7 @@ $global:LASTEXITCODE = 0
 
     $installer = Join-Path $temp 'install.ps1'
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'install.ps1') -Destination $installer
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'windows-architecture.ps1') -Destination (Join-Path $temp 'windows-architecture.ps1')
     $output = (& $installer | Out-String)
     if ($output -notmatch 'resolved Komposyn release: v1\.2\.3') { throw 'default installer did not show the resolved stable tag' }
     $binary = Join-Path $installDir 'komposyn-lg.exe'
