@@ -99,6 +99,26 @@ source_dir="$tmp_dir/source"
 mkdir -p "$source_dir"
 cp "$tmp_dir/$binary_name" "$binary_path"
 chmod 0755 "$binary_path"
+target="${asset#komposyn-lg_${version}_}"
+target="${target%.tar.gz}"
+target="${target%.zip}"
+target_os="${target%%_*}"
+target_arch="${target#*_}"
+metadata_binary="$binary_path"
+if [[ "$windows_host" == true ]]; then
+  metadata_binary="$(cygpath -w "$binary_path")"
+fi
+go_metadata="$(go version -m "$metadata_binary")"
+[[ "$go_metadata" == *"GOOS=$target_os"* && "$go_metadata" == *"GOARCH=$target_arch"* ]] || {
+  echo "release binary architecture metadata does not match $target: $go_metadata" >&2
+  exit 1
+}
+core_module_version="$(awk '$1 == "github.com/ayeshLK/komposyn" { sub(/^v/, "", $2); print $2; exit }' "$root_dir/go.mod")"
+candidate_version_output="$("$binary_path" version)"
+[[ "$candidate_version_output" == "komposyn-lg $version (core $core_module_version)" ]] || {
+  echo "release CLI/core version metadata mismatch: $candidate_version_output" >&2
+  exit 1
+}
 
 # An optional released binary creates the database and settings for a real
 # old-to-new migration. Protocol v1 is stable, so the fixture does not depend
@@ -300,6 +320,11 @@ if [[ "$windows_host" == true ]]; then
 fi
 TOKEN_LOGGER_DATA_DIR="$refusal_env_dir" "$binary_path" settings --collector off --auto-start off >/dev/null
 TOKEN_LOGGER_DATA_DIR="$refusal_env_dir" "$binary_path" usage --format json >/dev/null
+protocol_output="$(printf '%s\n' '{"protocol":"komposyn.token-logger","version":1,"id":"init","method":"initialize","params":{}}' '{"protocol":"komposyn.token-logger","version":1,"id":"stop","method":"shutdown"}' | TOKEN_LOGGER_DATA_DIR="$refusal_env_dir" "$binary_path" harness)"
+[[ "$protocol_output" == *'"version":1'* ]] || {
+  echo "standalone runtime protocol v1 smoke failed: $protocol_output" >&2
+  exit 1
+}
 python3 - "$refusal_dir/token-logger.db" <<'PY'
 import sqlite3
 import sys
