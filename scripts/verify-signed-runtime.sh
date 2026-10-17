@@ -43,7 +43,13 @@ if [[ "$binary" == komposyn-lg.exe ]]; then
   export TOKEN_LOGGER_DATA_DIR="$caller_data"
   output="$("$archive_path" version)"
   [[ "$output" == *"komposyn-lg $version (core $core_version)"* ]] || { echo "unexpected version metadata: $output" >&2; exit 1; }
-  printf '%s\n' '{"protocol":"komposyn.token-logger","version":1,"id":"init","method":"initialize","params":{"data_dir":"'"$cli_data"'"}}' '{"protocol":"komposyn.token-logger","version":1,"id":"stop","method":"shutdown"}' | "$archive_path" harness > "$tmp/protocol.jsonl"
+  init_request="$(python3 - "$cli_data" <<'PY'
+import json
+import sys
+print(json.dumps({"protocol":"komposyn.token-logger","version":1,"id":"init","method":"initialize","params":{"data_dir":sys.argv[1]}}))
+PY
+)"
+  printf '%s\n' "$init_request" '{"protocol":"komposyn.token-logger","version":1,"id":"stop","method":"shutdown"}' | "$archive_path" harness > "$tmp/protocol.jsonl"
 else
   go version -m "$tmp/$binary" > "$tmp/go-version.txt"
   grep -Eq 'GOOS=(linux|darwin)' "$tmp/go-version.txt"
@@ -52,8 +58,15 @@ else
   export TOKEN_LOGGER_DATA_DIR="$tmp/unrelated-data"
   output="$("$tmp/$binary" version)"
   [[ "$output" == *"komposyn-lg $version (core $core_version)"* ]] || { echo "unexpected version metadata: $output" >&2; exit 1; }
-  printf '%s\n' '{"protocol":"komposyn.token-logger","version":1,"id":"init","method":"initialize","params":{"data_dir":"'"$tmp/probe-data"'"}}' '{"protocol":"komposyn.token-logger","version":1,"id":"stop","method":"shutdown"}' | "$tmp/$binary" harness > "$tmp/protocol.jsonl"
+  init_request="$(python3 - "$tmp/probe-data" <<'PY'
+import json
+import sys
+print(json.dumps({"protocol":"komposyn.token-logger","version":1,"id":"init","method":"initialize","params":{"data_dir":sys.argv[1]}}))
+PY
+)"
+  printf '%s\n' "$init_request" '{"protocol":"komposyn.token-logger","version":1,"id":"stop","method":"shutdown"}' | "$tmp/$binary" harness > "$tmp/protocol.jsonl"
 fi
 grep -q '"version":1' "$tmp/protocol.jsonl" || { echo 'protocol v1 initialize/shutdown failed' >&2; exit 1; }
+[[ -f "$tmp/probe-data/token-logger.db" ]] || { echo 'protocol initialize did not use its isolated data directory' >&2; exit 1; }
 [[ ! -e "$tmp/unrelated-data/token-logger.db" && ! -e "$tmp/unrelated-data/settings.json" ]] || { echo 'runtime ignored explicit protocol data directory' >&2; exit 1; }
 echo "signed runtime smoke passed for $target CLI $version core $core_version (protocol v1; not full lifecycle coverage)"
