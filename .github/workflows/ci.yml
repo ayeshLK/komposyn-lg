@@ -24,6 +24,16 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Parse native Windows lifecycle verifier scripts
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $files = @('./scripts/verify-active-signed-candidate-upgrade.ps1')
+          foreach ($file in $files) {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file), [ref]$null, [ref]$errors) | Out-Null
+            if ($errors) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }
+          }
       - name: Check formatting
         shell: bash
         run: test -z "$(gofmt -l $(git ls-files '*.go'))"
