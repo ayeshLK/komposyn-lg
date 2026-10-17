@@ -286,6 +286,47 @@ fi
   echo "upgrade did not preserve local data" >&2
   exit 1
 }
+
+# Exercise the standalone CLI against a synthetic newer schema in an isolated
+# directory. Core must refuse it before mutation or SQLite sidecar creation.
+refusal_dir="$tmp_dir/newer-schema-data"
+mkdir -p "$refusal_dir"
+refusal_env_dir="$refusal_dir"
+if [[ "$windows_host" == true ]]; then
+  refusal_env_dir="$(cygpath -w "$refusal_dir")"
+fi
+TOKEN_LOGGER_DATA_DIR="$refusal_env_dir" "$binary_path" settings --collector off --auto-start off >/dev/null
+TOKEN_LOGGER_DATA_DIR="$refusal_env_dir" "$binary_path" usage --format json >/dev/null
+python3 - "$refusal_dir/token-logger.db" <<'PY'
+import sqlite3
+import sys
+
+connection = sqlite3.connect(sys.argv[1])
+try:
+    connection.execute("UPDATE schema_migrations SET version = 16 WHERE version = (SELECT MAX(version) FROM schema_migrations)")
+    connection.commit()
+finally:
+    connection.close()
+PY
+refusal_digest="$(file_sha256 "$refusal_dir/token-logger.db")"
+if TOKEN_LOGGER_DATA_DIR="$refusal_env_dir" "$binary_path" usage --format json >"$tmp_dir/newer-schema-output.txt" 2>&1; then
+  echo "standalone CLI unexpectedly opened a newer unsupported database schema" >&2
+  exit 1
+fi
+[[ "$(file_sha256 "$refusal_dir/token-logger.db")" == "$refusal_digest" ]] || {
+  echo "newer-schema refusal changed the database bytes" >&2
+  exit 1
+}
+for sidecar in token-logger.db-wal token-logger.db-shm; do
+  [[ ! -e "$refusal_dir/$sidecar" ]] || {
+    echo "newer-schema refusal created SQLite sidecar $sidecar" >&2
+    exit 1
+  }
+done
+compgen -G "$refusal_dir/.komposyn-pre-migration-*.sqlite" >/dev/null && {
+  echo "newer-schema refusal created a migration backup" >&2
+  exit 1
+}
 if [[ "$windows_host" == true ]]; then
   win_install_dir="$(cygpath -w "$install_dir")"
   win_data_dir="$(cygpath -w "$data_dir")"
