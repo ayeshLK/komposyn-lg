@@ -8,13 +8,14 @@ core_version="${4:?expected core version required}"
 identity='^https://github.com/ayeshLK/komposyn-lg/.github/workflows/release.yml@refs/heads/master$'
 issuer='https://token.actions.githubusercontent.com'
 host="$(uname -s):$(uname -m)"
+native_windows_arch="${PROCESSOR_ARCHITECTURE:-$(uname -m)}"
 case "$host" in
   Linux:x86_64|Linux:amd64) native=linux_amd64 ;;
   Linux:aarch64|Linux:arm64) native=linux_arm64 ;;
   Darwin:x86_64) native=darwin_amd64 ;;
   Darwin:arm64) native=darwin_arm64 ;;
-  MINGW64_NT*:x86_64|MSYS_NT*:x86_64|CYGWIN_NT*:x86_64) native=windows_amd64 ;;
-  MINGWARM64_NT*:aarch64|MINGWARM64_NT*:arm64|MSYS_NT*:aarch64|MSYS_NT*:arm64|CYGWIN_NT*:aarch64|CYGWIN_NT*:arm64) native=windows_arm64 ;;
+  MINGW64_NT*:x86_64|MSYS_NT*:x86_64|CYGWIN_NT*:x86_64|MINGWARM64_NT*:aarch64|MINGWARM64_NT*:arm64|MSYS_NT*:aarch64|MSYS_NT*:arm64|CYGWIN_NT*:aarch64|CYGWIN_NT*:arm64)
+    case "${native_windows_arch,,}" in ARM64|ARM64EC|aarch64|arm64) native=windows_arm64 ;; *) native=windows_amd64 ;; esac ;;
   *) echo "unsupported native runtime host: $host" >&2; exit 1 ;;
 esac
 [[ "$native" == "$target" ]] || { echo "native target $native does not match $target" >&2; exit 1; }

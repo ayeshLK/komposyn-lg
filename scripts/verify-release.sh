@@ -48,18 +48,17 @@ fi
 
 host_os="$(uname -s)"
 host_arch="$(uname -m)"
+native_windows_arch="${PROCESSOR_ARCHITECTURE:-$host_arch}"
 windows_host=false
 case "$host_os:$host_arch" in
   Linux:x86_64) asset="komposyn-lg_${version}_linux_amd64.tar.gz" ;;
   Linux:aarch64|Linux:arm64) asset="komposyn-lg_${version}_linux_arm64.tar.gz" ;;
   Darwin:x86_64) asset="komposyn-lg_${version}_darwin_amd64.tar.gz" ;;
   Darwin:arm64) asset="komposyn-lg_${version}_darwin_arm64.tar.gz" ;;
-  MINGW64_NT*:x86_64|MSYS_NT*:x86_64|CYGWIN_NT*:x86_64)
-    asset="komposyn-lg_${version}_windows_amd64.zip"
-    windows_host=true
-    ;;
-  MINGWARM64_NT*:aarch64|MINGWARM64_NT*:arm64|MSYS_NT*:aarch64|MSYS_NT*:arm64|CYGWIN_NT*:aarch64|CYGWIN_NT*:arm64)
-    asset="komposyn-lg_${version}_windows_arm64.zip"
+  MINGW64_NT*:x86_64|MSYS_NT*:x86_64|CYGWIN_NT*:x86_64|MINGWARM64_NT*:aarch64|MINGWARM64_NT*:arm64|MSYS_NT*:aarch64|MSYS_NT*:arm64|CYGWIN_NT*:aarch64|CYGWIN_NT*:arm64)
+    windows_arch=amd64
+    case "${native_windows_arch,,}" in ARM64|ARM64EC|aarch64|arm64) windows_arch=arm64 ;; esac
+    asset="komposyn-lg_${version}_windows_${windows_arch}.zip"
     windows_host=true
     ;;
   *) echo "unsupported verification host: $host_os:$host_arch" >&2; exit 1 ;;
