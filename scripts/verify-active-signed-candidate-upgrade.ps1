@@ -121,7 +121,8 @@ db.commit()
     if ((Invoke-CLI @('sessions','list','--project','issue-46-active-project','--format','json') | Out-String) -notmatch 'issue-46-active-session') { throw 'session identity was not preserved' }
     $reimport = (Invoke-CLI @('import',(Join-Path $sourceDir 'normal.jsonl'),'--format','json') | Out-String)
     if ($reimport -notmatch '"imported_events"\s*:\s*0' -or $reimport -notmatch '"duplicate_events"\s*:\s*0') { throw "source cursor was not preserved: $reimport" }
-    if ((Invoke-CLI @('watch','list','--format','json') | Out-String) -notmatch [regex]::Escape($sourceDir)) { throw 'collector registry was not preserved' }
+    $watchSources = ((Invoke-CLI @('watch','list','--format','json') | Out-String) | ConvertFrom-Json).sources
+    if (-not ($watchSources | Where-Object { $_.path -eq $sourceDir })) { throw 'collector registry was not preserved' }
     @'
 import sqlite3, sys
 db=sqlite3.connect(f"file:{sys.argv[1]}?mode=ro",uri=True)
