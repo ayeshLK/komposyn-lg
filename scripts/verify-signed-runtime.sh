@@ -9,6 +9,10 @@ identity='^https://github.com/ayeshLK/komposyn-lg/.github/workflows/release.yml@
 issuer='https://token.actions.githubusercontent.com'
 host="$(uname -s):$(uname -m)"
 native_windows_arch="${PROCESSOR_ARCHITECTURE:-$(uname -m)}"
+if [[ "$(uname -s)" == MINGW* || "$(uname -s)" == MSYS* || "$(uname -s)" == CYGWIN* ]]; then
+  queried_windows_arch="$(powershell.exe -NoProfile -Command '[System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()' 2>/dev/null | tr -d '\r\n' || true)"
+  [[ -z "$queried_windows_arch" ]] || native_windows_arch="$queried_windows_arch"
+fi
 case "$host" in
   Linux:x86_64|Linux:amd64) native=linux_amd64 ;;
   Linux:aarch64|Linux:arm64) native=linux_arm64 ;;

@@ -49,6 +49,10 @@ fi
 host_os="$(uname -s)"
 host_arch="$(uname -m)"
 native_windows_arch="${PROCESSOR_ARCHITECTURE:-$host_arch}"
+if [[ "$host_os" == MINGW* || "$host_os" == MSYS* || "$host_os" == CYGWIN* ]]; then
+  queried_windows_arch="$(powershell.exe -NoProfile -Command '[System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()' 2>/dev/null | tr -d '\r\n' || true)"
+  [[ -z "$queried_windows_arch" ]] || native_windows_arch="$queried_windows_arch"
+fi
 windows_host=false
 case "$host_os:$host_arch" in
   Linux:x86_64) asset="komposyn-lg_${version}_linux_amd64.tar.gz" ;;
