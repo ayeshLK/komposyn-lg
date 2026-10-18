@@ -5,6 +5,16 @@ root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 resolver="$root_dir/scripts/resolve-core-version.sh"
 expected_version='v0.7.0'
 
+python3 - "$root_dir/release-please-config.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as config_file:
+    config = json.load(config_file)
+if config["packages"]["."]["include-component-in-tag"] is not False:
+    raise SystemExit("Release Please must produce plain vX.Y.Z tags for release.yml")
+PY
+
 resolved="$(bash "$resolver" github.com/ayeshLK/komposyn "$expected_version")"
 [[ "$resolved" == "$expected_version" ]] || {
 	echo "resolver returned $resolved instead of $expected_version" >&2

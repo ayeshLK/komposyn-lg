@@ -3,7 +3,8 @@
   "packages": {
     ".": {
       "release-type": "go",
-      "package-name": "github.com/ayeshLK/komposyn-lg"
+      "package-name": "github.com/ayeshLK/komposyn-lg",
+      "include-component-in-tag": false
     }
   }
 }

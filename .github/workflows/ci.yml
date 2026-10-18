@@ -42,6 +42,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           bash scripts/test-release-assets.sh
+          bash scripts/test-release-provenance.sh
           python3 scripts/test-protocol-smoke.py
       - name: Check formatting
         shell: bash
