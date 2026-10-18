@@ -16,6 +16,12 @@ Later verification fixes from PR #130 are applied to
 executable and preserves protocol v1, the `plugin_version` core field, and the
 `cli_version` executable field.
 
-The combined repository remains authoritative until a signed standalone
-release is published and verified. No legacy CLI or release machinery should
-be removed before that cutover is complete.
+The first standalone release, CLI v0.8.0 pinned to core v0.7.0, was published
+from `9369bc327e70928c69b332a4aa54ad38de5a226c` and verified in workflow run
+[39102174717](https://github.com/ayeshLK/komposyn-lg/actions/runs/39102174717).
+All six native signed runtime/installer and historical active-collector
+upgrade jobs passed, followed by post-publication asset comparison and Linux
+lifecycle verification. The standalone repository is now authoritative for
+the executable and its release lifecycle. Core cleanup is being prepared as a
+separate reviewable change; historical combined releases and their signer
+identity remain available for verification.

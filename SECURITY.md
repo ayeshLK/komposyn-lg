@@ -14,6 +14,27 @@ and the OIDC issuer is `https://token.actions.githubusercontent.com`.
 Never weaken verification or accept the former combined repository's identity
 for new standalone artifacts.
 
+## Supported versions
+
+Only the latest published standalone CLI release receives security fixes. As
+of this policy's adoption, that release is `v0.8.0`; when a newer CLI release
+is published, older releases become unsupported. The `master` branch is the
+development source for future releases, not a separately supported install or
+release line. Security fixes for the supported release are developed on
+`master` and delivered in a new signed release. Users should install the latest
+published release over the existing executable; the installer preserves the
+existing data directory.
+
+The core repository owns vulnerabilities in its reusable API, SQLite storage
+and migrations, adapters, collector, pricing, diagnostics, and reports. This
+repository owns command execution, settings and consent policy, data-directory
+selection, process lifecycle, harness transport, installers, and binary
+releases. The repository that owns vulnerable code owns its advisory. When
+impact crosses the boundary, coordinate privately with the other repository
+before disclosure. See [core compatibility and coordinated security
+releases](docs/core-compatibility-security.md) for affected/fixed version
+mapping, embargo preparation, and user upgrade instructions.
+
 Please do not report vulnerabilities in public issues, pull requests, or
 discussions. Use the repository's private vulnerability reporting form at
 `https://github.com/ayeshLK/komposyn-lg/security/advisories/new`. If it is
