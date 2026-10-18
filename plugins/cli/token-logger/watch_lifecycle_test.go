@@ -186,10 +186,6 @@ func TestPositionalForegroundAppendPendingTailAndRestart(t *testing.T) {
 		t.Fatalf("restart reimported unchanged source records: %+v", restarted)
 	}
 
-	store, err = tokenlogger.Open(filepath.Join(dataDir, "token-logger.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	if count, err := store.EventCount(); err != nil || count != 3 {
 		t.Fatalf("event count after completing tail=%d err=%v, want 3", count, err)
 	}
