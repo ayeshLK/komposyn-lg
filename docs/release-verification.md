@@ -3,9 +3,11 @@
 Release Please prepares the standalone CLI version and changelog in a reviewed
 pull request. CLI and core versions advance independently: the release builder
 uses the requested CLI tag for `cli_version` and the exact pinned core module
-version for core `plugin_version`. The proposed first standalone CLI version is
-v0.7.1 and requires `github.com/ayeshLK/komposyn v0.7.0`; no permanent
-`replace` directive is permitted.
+version for core `plugin_version`. The first standalone release is CLI `v0.8.0`,
+pinned to `github.com/ayeshLK/komposyn v0.7.0`. The minimum supported core
+version and current dependency pin are both `v0.7.0`; normal CLI CI tests that
+version once instead of adding a redundant second job. See
+[core compatibility and coordinated security releases](core-compatibility-security.md).
 
 ## Publishing
 

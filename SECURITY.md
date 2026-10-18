@@ -14,6 +14,16 @@ and the OIDC issuer is `https://token.actions.githubusercontent.com`.
 Never weaken verification or accept the former combined repository's identity
 for new standalone artifacts.
 
+The core repository owns vulnerabilities in its reusable API, SQLite storage
+and migrations, adapters, collector, pricing, diagnostics, and reports. This
+repository owns command execution, settings and consent policy, data-directory
+selection, process lifecycle, harness transport, installers, and binary
+releases. The repository that owns vulnerable code owns its advisory. When
+impact crosses the boundary, coordinate privately with the other repository
+before disclosure. See [core compatibility and coordinated security
+releases](docs/core-compatibility-security.md) for affected/fixed version
+mapping, embargo preparation, and user upgrade instructions.
+
 Please do not report vulnerabilities in public issues, pull requests, or
 discussions. Use the repository's private vulnerability reporting form at
 `https://github.com/ayeshLK/komposyn-lg/security/advisories/new`. If it is

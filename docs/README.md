@@ -10,6 +10,8 @@
 - [Installation](installation.md), [upgrades](upgrades.md), and
   [release verification](release-verification.md) — signed releases and data
   preservation.
+- [Core compatibility and coordinated security releases](core-compatibility-security.md)
+  — supported core versions, dependency review, and private release coordination.
 - [Privacy](privacy.md) and [security model](security-model.md) — local data,
   disclosure, and vulnerability reporting.
 - [Development](contributing/development.md), [testing](contributing/testing.md),
