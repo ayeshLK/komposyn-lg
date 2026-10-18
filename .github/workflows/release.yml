@@ -180,13 +180,25 @@ jobs:
           if-no-files-found: error
 
   verify-installers:
-    name: Verify installer (${{ matrix.os }})
+    name: Verify installer and runtime (${{ matrix.target }})
     needs: [prepare, build-release]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest, windows-11-arm]
+        include:
+          - os: ubuntu-24.04
+            target: linux_amd64
+          - os: ubuntu-24.04-arm
+            target: linux_arm64
+          - os: macos-15-intel
+            target: darwin_amd64
+          - os: macos-latest
+            target: darwin_arm64
+          - os: windows-latest
+            target: windows_amd64
+          - os: windows-11-arm
+            target: windows_arm64
     steps:
       - name: Check out source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -198,6 +210,11 @@ jobs:
         with:
           name: release-artifacts
           path: dist
+
+      - name: Set up Go for archive metadata inspection
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5
+        with:
+          go-version: 1.26.9
 
       - name: Install Cosign
         if: matrix.os != 'windows-11-arm'
@@ -214,6 +231,14 @@ jobs:
       - name: Install pinned Cosign natively on Windows ARM64
         if: matrix.os == 'windows-11-arm'
         run: go install github.com/sigstore/cosign/v2/cmd/cosign@v2.4.3
+
+      - name: Verify signed native runtime, metadata, and protocol smoke
+        env:
+          EXPECTED_TARGET: ${{ matrix.target }}
+          EXPECTED_VERSION: ${{ needs.prepare.outputs.version }}
+          EXPECTED_CORE_VERSION: 0.7.0
+        shell: bash
+        run: bash scripts/verify-signed-runtime.sh dist "$EXPECTED_TARGET" "$EXPECTED_VERSION" "$EXPECTED_CORE_VERSION"
 
       - name: Verify Unix installer lifecycle
         if: runner.os != 'Windows'
@@ -244,13 +269,14 @@ jobs:
       - name: Verify release archive lifecycle on native Windows ARM64
         if: matrix.os == 'windows-11-arm'
         shell: bash
-        run: bash scripts/verify-release.sh dist
+        run: bash scripts/verify-release.sh dist "" "${{ matrix.target }}"
 
       - name: Verify Windows installer lifecycle
         if: runner.os == 'Windows'
         env:
           KOMPOSYN_VERSION: ${{ needs.prepare.outputs.tag }}
           KOMPOSYN_RELEASE_DIR: ${{ github.workspace }}/dist
+          EXPECTED_TARGET: ${{ matrix.target }}
         shell: pwsh
         run: |
           $env:KOMPOSYN_INSTALL_DIR = Join-Path $env:RUNNER_TEMP 'komposyn-bin'
@@ -258,6 +284,9 @@ jobs:
           & ./scripts/install.ps1
           $binary = Join-Path $env:KOMPOSYN_INSTALL_DIR 'komposyn-lg.exe'
           & $binary version
+          $expectedGoArch = if ($env:EXPECTED_TARGET -eq 'windows_arm64') { 'arm64' } else { 'amd64' }
+          $metadata = (& go version -m $binary | Out-String)
+          if ($metadata -notmatch 'GOOS=windows' -or $metadata -notmatch "GOARCH=$expectedGoArch") { throw "installer selected the wrong native archive for $env:EXPECTED_TARGET`n$metadata" }
           & $binary settings --collector off --auto-start off
           & $binary usage --format json | Out-Null
           $source = Join-Path $env:RUNNER_TEMP 'komposyn-source'
@@ -274,9 +303,91 @@ jobs:
           if (-not (Test-Path (Join-Path $env:TOKEN_LOGGER_DATA_DIR 'settings.json'))) { throw 'uninstall removed settings' }
           if (-not (Test-Path (Join-Path $env:TOKEN_LOGGER_DATA_DIR 'token-logger.db'))) { throw 'uninstall removed database' }
 
+  verify-signed-artifacts:
+    name: Verify all six signed release archives
+    needs: [prepare, build-release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download signed release artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-artifacts
+          path: dist
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v2.4.3
+      - name: Verify exact standalone workflow identity and all checksums
+        shell: bash
+        run: |
+          identity='^https://github.com/ayeshLK/komposyn-lg/.github/workflows/release.yml@refs/heads/master$'
+          issuer='https://token.actions.githubusercontent.com'
+          cosign verify-blob --signature dist/SHA256SUMS.sig --certificate dist/SHA256SUMS.pem --certificate-identity-regexp "$identity" --certificate-oidc-issuer "$issuer" dist/SHA256SUMS
+          mapfile -t archives < <(find dist -maxdepth 1 -type f \( -name 'komposyn-lg_*.tar.gz' -o -name 'komposyn-lg_*.zip' \) -print | sort)
+          [[ "${#archives[@]}" -eq 6 ]]
+          (cd dist && sha256sum -c SHA256SUMS)
+          for archive in "${archives[@]}"; do
+            cosign verify-blob --signature "${archive}.sig" --certificate "${archive}.pem" --certificate-identity-regexp "$identity" --certificate-oidc-issuer "$issuer" "$archive"
+          done
+
+  verify-active-historical:
+    name: Verify signed cross-version active collector upgrade (${{ matrix.target }})
+    needs: [prepare, build-release]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: linux_amd64
+          - os: ubuntu-24.04-arm
+            target: linux_arm64
+          - os: macos-15-intel
+            target: darwin_amd64
+          - os: macos-latest
+            target: darwin_arm64
+          - os: windows-latest
+            target: windows_amd64
+          - os: windows-11-arm
+            target: windows_arm64
+    steps:
+      - name: Check out tested source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+      - name: Download signed candidate artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-artifacts
+          path: dist
+      - name: Set up Go for Cosign
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5
+        with:
+          go-version: 1.26.9
+      - name: Install Cosign
+        if: matrix.os != 'windows-11-arm'
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v2.4.3
+      - name: Install pinned Cosign natively on Windows ARM64
+        if: matrix.os == 'windows-11-arm'
+        run: go install github.com/sigstore/cosign/v2/cmd/cosign@v2.4.3
+      - name: Verify active collector upgrade on native Unix
+        if: runner.os != 'Windows'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/verify-active-signed-candidate-upgrade.sh v0.6.0 dist
+      - name: Verify active collector upgrade on native Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_TARGET: ${{ matrix.target }}
+        run: ./scripts/verify-active-signed-candidate-upgrade.ps1 -OldTag v0.6.0 -CandidateDir dist
+
   publish:
     name: Publish GitHub release
-    needs: [prepare, build-release, verify-installers]
+    needs: [prepare, build-release, verify-installers, verify-signed-artifacts, verify-active-historical]
     runs-on: ubuntu-latest
     environment: release
     permissions:
@@ -302,29 +413,7 @@ jobs:
           RELEASE_COMMIT: ${{ needs.prepare.outputs.commit }}
         shell: bash
         run: |
-          mapfile -t archives < <(find dist -maxdepth 1 -type f \( -name 'komposyn-lg_*.tar.gz' -o -name 'komposyn-lg_*.zip' \) -print | sort)
-          [[ "${#archives[@]}" -eq 6 ]] || {
-            echo "Expected six release archives, found ${#archives[@]}" >&2
-            exit 1
-          }
-          assets=("${archives[@]}" "dist/SHA256SUMS")
-          for checksum_signature in dist/SHA256SUMS.sig dist/SHA256SUMS.pem; do
-            [[ -f "$checksum_signature" ]] || {
-              echo "Missing signed asset: $checksum_signature" >&2
-              exit 1
-            }
-            assets+=("$checksum_signature")
-          done
-          for archive in "${archives[@]}"; do
-            for suffix in .sig .pem; do
-              signed_asset="${archive}${suffix}"
-              [[ -f "$signed_asset" ]] || {
-                echo "Missing signed asset: $signed_asset" >&2
-                exit 1
-              }
-              assets+=("$signed_asset")
-            done
-          done
+          mapfile -t assets < <(bash scripts/list-release-assets.sh dist)
 
           notes_file="$RUNNER_TEMP/release-notes.md"
           awk -v version="${RELEASE_TAG#v}" '
@@ -407,6 +496,45 @@ jobs:
             echo "Tag $RELEASE_TAG resolves to $tagged_commit, expected $RELEASE_COMMIT" >&2
             exit 1
           }
+
+      - name: Install Cosign for published asset verification
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v2.4.3
+
+      - name: Verify downloaded published assets and Linux lifecycle
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        shell: bash
+        run: |
+          mkdir published
+          gh release download "$RELEASE_TAG" --dir published
+          mapfile -t assets < <(bash scripts/list-release-assets.sh dist)
+          expected_assets="$(printf '%s\n' "${assets[@]}" | xargs -n1 basename | sort)"
+          actual_assets="$(find published -maxdepth 1 -type f -printf '%f\n' | sort)"
+          [[ "$actual_assets" == "$expected_assets" ]] || {
+            echo 'published release asset set differs from the upload allowlist' >&2
+            diff -u <(printf '%s\n' "$expected_assets") <(printf '%s\n' "$actual_assets") || true
+            exit 1
+          }
+          for artifact in "${assets[@]}"; do
+            published_artifact="published/$(basename "$artifact")"
+            [[ -f "$published_artifact" ]] || { echo "published release is missing $(basename "$artifact")" >&2; exit 1; }
+            cmp -s "$artifact" "$published_artifact" || { echo "published asset differs from tested signed artifact: $(basename "$artifact")" >&2; exit 1; }
+          done
+          identity='^https://github.com/ayeshLK/komposyn-lg/.github/workflows/release.yml@refs/heads/master$'
+          issuer='https://token.actions.githubusercontent.com'
+          cosign verify-blob --signature published/SHA256SUMS.sig --certificate published/SHA256SUMS.pem --certificate-identity-regexp "$identity" --certificate-oidc-issuer "$issuer" published/SHA256SUMS
+          mapfile -t archives < <(find published -maxdepth 1 -type f \( -name 'komposyn-lg_*.tar.gz' -o -name 'komposyn-lg_*.zip' \) -print | sort)
+          [[ "${#archives[@]}" -eq 6 ]]
+          (cd published && sha256sum -c SHA256SUMS)
+          for archive in "${archives[@]}"; do
+            cosign verify-blob --signature "${archive}.sig" --certificate "${archive}.pem" --certificate-identity-regexp "$identity" --certificate-oidc-issuer "$issuer" "$archive"
+          done
+          bash scripts/verify-signed-runtime.sh published linux_amd64 "$RELEASE_VERSION" 0.7.0
+          bash scripts/verify-release.sh published
 
       - name: Remove completed release marker
         env:

@@ -36,7 +36,9 @@ $version = $tag.Substring(1)
 Write-Output "resolved Komposyn release: $tag"
 $installDir = if ($env:KOMPOSYN_INSTALL_DIR) { $env:KOMPOSYN_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'Komposyn\bin' }
 $tagPath = "download/$tag"
-$windowsArch = if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq [System.Runtime.InteropServices.Architecture]::Arm64) { 'arm64' } else { 'amd64' }
+$windowsArchitectureHelper = Join-Path $PSScriptRoot 'windows-architecture.ps1'
+if (Test-Path -LiteralPath $windowsArchitectureHelper) { . $windowsArchitectureHelper }
+$windowsArch = if (Get-Command Get-KomposynWindowsArchitecture -ErrorAction SilentlyContinue) { Get-KomposynWindowsArchitecture } else { if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq [System.Runtime.InteropServices.Architecture]::Arm64) { 'arm64' } else { 'amd64' } }
 $asset = "komposyn-lg_${version}_windows_${windowsArch}.zip"
 $assetUrl = "$base/$tagPath/$asset"
 $checksumsUrl = "$base/$tagPath/SHA256SUMS"

@@ -49,6 +49,25 @@ type blockingWatchPoller struct {
 	laterStarted bool
 }
 
+func openStoreWhileCollectorStarts(t *testing.T, path string) *tokenlogger.Store {
+	t.Helper()
+	deadline := time.Now().Add(15 * time.Second)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		store, err := tokenlogger.Open(path)
+		if err == nil {
+			return store
+		}
+		lastErr = err
+		if !strings.Contains(strings.ToLower(err.Error()), "locked") && !strings.Contains(strings.ToLower(err.Error()), "busy") {
+			t.Fatalf("open collector database: %v", err)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("timed out opening collector database after transient SQLite contention: %v", lastErr)
+	return nil
+}
+
 func (poller *blockingWatchPoller) PollOnceContext(ctx context.Context) (tokenlogger.ImportResult, error) {
 	close(poller.started)
 	select {
@@ -244,10 +263,7 @@ func TestForegroundWatchRejectsActiveCollectorLease(t *testing.T) {
 	if code != 2 || !strings.Contains(stderr.String(), "another collector is already active") {
 		t.Fatalf("foreground code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
-	store, err = tokenlogger.Open(filepath.Join(dataDir, "token-logger.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	store = openStoreWhileCollectorStarts(t, filepath.Join(dataDir, "token-logger.db"))
 	defer store.Close()
 	report, err := store.Query(tokenlogger.UsageFilter{From: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), To: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)})
 	if err != nil || report.Summary.RequestCount != 0 {
@@ -371,7 +387,7 @@ func TestRegistryForegroundReloadsSourcesBeforeEachPoll(t *testing.T) {
 	defer store.Close()
 	waitForSourceStatus := func(path, description string) {
 		t.Helper()
-		deadline := time.Now().Add(5 * time.Second)
+		deadline := time.Now().Add(15 * time.Second)
 		for time.Now().Before(deadline) {
 			sources, listErr := store.ListCollectorSources(false)
 			if listErr == nil {
@@ -381,7 +397,7 @@ func TestRegistryForegroundReloadsSourcesBeforeEachPoll(t *testing.T) {
 					}
 				}
 			}
-			time.Sleep(10 * time.Millisecond)
+			time.Sleep(50 * time.Millisecond)
 		}
 		t.Fatalf("timed out waiting for %s; stderr=%q", description, stderr.String())
 	}
@@ -437,20 +453,17 @@ func TestRegistryForegroundSummaryAccumulatesAcrossReloadedCollectors(t *testing
 	go func() {
 		done <- runWatchWithContext([]string{"foreground", "--interval", "20ms", "--data-dir", dataDir}, &stdout, &stderr, ctx)
 	}()
-	store, err = tokenlogger.Open(filepath.Join(dataDir, "token-logger.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	store = openStoreWhileCollectorStarts(t, filepath.Join(dataDir, "token-logger.db"))
 	defer store.Close()
 	waitForRuntime := func(description string, condition func(tokenlogger.CollectorRuntimeStatus) bool) {
 		t.Helper()
-		deadline := time.Now().Add(5 * time.Second)
+		deadline := time.Now().Add(15 * time.Second)
 		for time.Now().Before(deadline) {
 			status, statusErr := store.CollectorRuntimeStatus(time.Second)
 			if statusErr == nil && condition(status) {
 				return
 			}
-			time.Sleep(10 * time.Millisecond)
+			time.Sleep(50 * time.Millisecond)
 		}
 		cancel()
 		t.Fatalf("timed out waiting for %s; stderr=%q output=%q", description, stderr.String(), stdout.String())

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-dist_dir="${1:?usage: verify-release.sh <release-dir> [verified-reference-binary]}"
+dist_dir="${1:?usage: verify-release.sh <release-dir> [verified-reference-binary] [expected-target]}"
 reference_binary="${2:-}"
+expected_target="${3:-}"
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 version="$(sed -n 's/^# version=//p' "$dist_dir/SHA256SUMS" | head -1)"
 if [[ -z "$version" ]]; then
@@ -54,12 +55,10 @@ case "$host_os:$host_arch" in
   Linux:aarch64|Linux:arm64) asset="komposyn-lg_${version}_linux_arm64.tar.gz" ;;
   Darwin:x86_64) asset="komposyn-lg_${version}_darwin_amd64.tar.gz" ;;
   Darwin:arm64) asset="komposyn-lg_${version}_darwin_arm64.tar.gz" ;;
-  MINGW64_NT*:x86_64|MSYS_NT*:x86_64|CYGWIN_NT*:x86_64)
-    asset="komposyn-lg_${version}_windows_amd64.zip"
-    windows_host=true
-    ;;
-  MINGWARM64_NT*:aarch64|MINGWARM64_NT*:arm64|MSYS_NT*:aarch64|MSYS_NT*:arm64|CYGWIN_NT*:aarch64|CYGWIN_NT*:arm64)
-    asset="komposyn-lg_${version}_windows_arm64.zip"
+  MINGW64_NT*:x86_64|MSYS_NT*:x86_64|CYGWIN_NT*:x86_64|MINGWARM64_NT*:aarch64|MINGWARM64_NT*:arm64|MSYS_NT*:aarch64|MSYS_NT*:arm64|CYGWIN_NT*:aarch64|CYGWIN_NT*:arm64)
+    windows_arch=amd64
+    case "$expected_target" in windows_amd64|windows_arm64) windows_arch="${expected_target#windows_}" ;; esac
+    asset="komposyn-lg_${version}_windows_${windows_arch}.zip"
     windows_host=true
     ;;
   *) echo "unsupported verification host: $host_os:$host_arch" >&2; exit 1 ;;
@@ -96,6 +95,30 @@ source_dir="$tmp_dir/source"
 mkdir -p "$source_dir"
 cp "$tmp_dir/$binary_name" "$binary_path"
 chmod 0755 "$binary_path"
+target="${asset#komposyn-lg_${version}_}"
+target="${target%.tar.gz}"
+target="${target%.zip}"
+target_os="${target%%_*}"
+target_arch="${target#*_}"
+if [[ -n "$expected_target" && "$target" != "$expected_target" ]]; then
+  echo "release target $target does not match expected native target $expected_target" >&2
+  exit 1
+fi
+metadata_binary="$binary_path"
+if [[ "$windows_host" == true ]]; then
+  metadata_binary="$(cygpath -w "$binary_path")"
+fi
+go_metadata="$(go version -m "$metadata_binary")"
+[[ "$go_metadata" == *"GOOS=$target_os"* && "$go_metadata" == *"GOARCH=$target_arch"* ]] || {
+  echo "release binary architecture metadata does not match $target: $go_metadata" >&2
+  exit 1
+}
+core_module_version="$(awk '$1 == "github.com/ayeshLK/komposyn" { sub(/^v/, "", $2); print $2; exit }' "$root_dir/go.mod")"
+candidate_version_output="$("$binary_path" version)"
+[[ "$candidate_version_output" == "komposyn-lg $version (core $core_module_version)" ]] || {
+  echo "release CLI/core version metadata mismatch: $candidate_version_output" >&2
+  exit 1
+}
 
 # An optional released binary creates the database and settings for a real
 # old-to-new migration. Protocol v1 is stable, so the fixture does not depend
@@ -284,6 +307,52 @@ else
 fi
 [[ -e "$data_dir/settings.json" && -e "$data_dir/token-logger.db" ]] || {
   echo "upgrade did not preserve local data" >&2
+  exit 1
+}
+
+# Exercise the standalone CLI against a synthetic newer schema in an isolated
+# directory. Core must refuse it before mutation or SQLite sidecar creation.
+refusal_dir="$tmp_dir/newer-schema-data"
+mkdir -p "$refusal_dir"
+refusal_env_dir="$refusal_dir"
+if [[ "$windows_host" == true ]]; then
+  refusal_env_dir="$(cygpath -w "$refusal_dir")"
+fi
+TOKEN_LOGGER_DATA_DIR="$refusal_env_dir" "$binary_path" settings --collector off --auto-start off >/dev/null
+TOKEN_LOGGER_DATA_DIR="$refusal_env_dir" "$binary_path" usage --format json >/dev/null
+protocol_output="$(printf '%s\n' '{"protocol":"komposyn.token-logger","version":1,"id":"init","method":"initialize","params":{}}' '{"protocol":"komposyn.token-logger","version":1,"id":"stop","method":"shutdown"}' | TOKEN_LOGGER_DATA_DIR="$refusal_env_dir" "$binary_path" harness)"
+[[ "$protocol_output" == *'"version":1'* ]] || {
+  echo "standalone runtime protocol v1 smoke failed: $protocol_output" >&2
+  exit 1
+}
+python3 - "$refusal_dir/token-logger.db" <<'PY'
+import sqlite3
+import sys
+
+connection = sqlite3.connect(sys.argv[1])
+try:
+    connection.execute("UPDATE schema_migrations SET version = 16 WHERE version = (SELECT MAX(version) FROM schema_migrations)")
+    connection.commit()
+finally:
+    connection.close()
+PY
+refusal_digest="$(file_sha256 "$refusal_dir/token-logger.db")"
+if TOKEN_LOGGER_DATA_DIR="$refusal_env_dir" "$binary_path" usage --format json >"$tmp_dir/newer-schema-output.txt" 2>&1; then
+  echo "standalone CLI unexpectedly opened a newer unsupported database schema" >&2
+  exit 1
+fi
+[[ "$(file_sha256 "$refusal_dir/token-logger.db")" == "$refusal_digest" ]] || {
+  echo "newer-schema refusal changed the database bytes" >&2
+  exit 1
+}
+for sidecar in token-logger.db-wal token-logger.db-shm; do
+  [[ ! -e "$refusal_dir/$sidecar" ]] || {
+    echo "newer-schema refusal created SQLite sidecar $sidecar" >&2
+    exit 1
+  }
+done
+compgen -G "$refusal_dir/.komposyn-pre-migration-*.sqlite" >/dev/null && {
+  echo "newer-schema refusal created a migration backup" >&2
   exit 1
 }
 if [[ "$windows_host" == true ]]; then
