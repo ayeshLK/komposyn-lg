@@ -15,5 +15,6 @@
 - [Privacy](privacy.md) and [security model](security-model.md) — local data,
   disclosure, and vulnerability reporting.
 - [Development](contributing/development.md), [testing](contributing/testing.md),
-  [pull requests](contributing/pull-requests.md), and
+  [pull requests](contributing/pull-requests.md), [collector resource
+  measurements](contributing/resource-measurements.md), and
   [Windows console testing](contributing/windows-console-testing.md).
