@@ -38,9 +38,12 @@ Installers must never accept both identities for new artifacts.
 - Minimum supported core and current CLI dependency pin are both `v0.7.0`.
   Normal CLI CI tests that pin once; an extra identical minimum-version job
   would be redundant. See [core compatibility and coordinated security](core-compatibility-security.md).
-- Core candidate CI runs the public standalone CLI suite using a temporary
-  dependency override in disposable storage, with read-only permissions and no
-  cross-repository credentials. No permanent `replace` directive is allowed.
+- Core PR [#133](https://github.com/ayeshLK/komposyn/pull/133) proposes a CI
+  job for the public standalone CLI suite using a temporary dependency override
+  in disposable storage, with read-only permissions and no cross-repository
+  credentials. The same candidate-core test passed locally at core commit
+  `9301710a9efe8b1e2447040ebe281d383e12a0d1`; the GitHub job remains unverified
+  until the PR runs. No permanent `replace` directive is allowed.
 - Dependency-update review covers public APIs, migrations and data recovery,
   protocol v1, exact JSON/CSV output, security/privacy notes, CLI/core/schema
   metadata, vulnerability scan, and release validation.
@@ -65,10 +68,11 @@ This is separate from the accepted branch-admin bypass policy.
 ## Remaining cutover work
 
 The standalone repository is authoritative for the executable and its release
-lifecycle after verified v0.8.0 publication. The core cleanup and candidate
-compatibility job are being prepared in a core PR; CLI dependency/security
-procedure updates are being prepared in a companion standalone PR. These items
-remain incomplete until both PRs merge and their merged-master checks pass:
+lifecycle after verified v0.8.0 publication. Core cleanup and candidate
+compatibility are proposed in [core PR #133](https://github.com/ayeshLK/komposyn/pull/133).
+CLI dependency/security procedure updates are proposed in [standalone PR #12](https://github.com/ayeshLK/komposyn-lg/pull/12).
+Both PRs are open; their changes remain incomplete until they merge and the
+merged-master checks pass:
 
 - Remove CLI implementation, CLI-only policy, installers, binary packaging,
   and CLI publication code from core.
@@ -78,6 +82,12 @@ remain incomplete until both PRs merge and their merged-master checks pass:
   replacement and no credentials/write access.
 - Merge dependency-update and coordinated security-release guidance into both
   repositories and verify links/checks in both.
+
+The release environment still reports `can_admins_bypass: true`. The maintainer
+must clear **Allow administrators to bypass configured protection rules** in
+[Settings → Environments → release](https://github.com/ayeshLK/komposyn-lg/settings/environments)
+and verify the API read-back. This is separate from the intentionally retained
+branch-administrator bypass policy.
 
 Do not close issue #46 until these cleanup changes merge, all checks pass, and
 the release-environment administrator-bypass follow-up is explicitly resolved
