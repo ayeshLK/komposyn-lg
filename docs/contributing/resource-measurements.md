@@ -8,10 +8,16 @@ synthetic content only; the tool never reads your real provider histories.
 
 ## Requirements and build selection
 
-Use Python 3.10 or newer and a built standalone executable. Build from the revision being
-measured, or point `--binary` at a separately built candidate. Always record the
-binary path and the output of `komposyn-lg version`, which reports both the CLI
-version and pinned core version.
+Use Python 3.10 or newer and a built standalone executable. Build from the
+revision being measured, or point `--binary` at a separately built candidate.
+Always record the binary path and the output of `komposyn-lg version`, which
+reports both the CLI version and pinned core version.
+
+When changing the measurement harness, run its focused cleanup checks:
+
+```sh
+python3 scripts/test-measure-collector.py
+```
 
 ```sh
 go build -o /tmp/komposyn-lg-measure ./plugins/cli/token-logger
@@ -31,8 +37,8 @@ interval, when comparing revisions. Start with the default five-second polling
 interval. Short intervals are stress runs and must be labeled as such.
 
 ```sh
-# Cold import / backfill of 10,000 Claude events
-python3 scripts/measure-collector.py --binary /tmp/komposyn-lg-measure --scenario cold --profile claude --events 10000 --duration 60s --interval 5s --artifacts /tmp/measure-cold
+# Cold import / backfill of 10,000 Claude events; ends at the first completed poll
+python3 scripts/measure-collector.py --binary /tmp/komposyn-lg-measure --scenario cold --profile claude --events 10000 --files 4 --interval 5s --startup-timeout 300s --artifacts /tmp/measure-cold
 
 # Warm, unchanged history
 python3 scripts/measure-collector.py --binary /tmp/komposyn-lg-measure --scenario unchanged --profile codex --events 10000 --warmup 15s --duration 120s --artifacts /tmp/measure-unchanged
@@ -50,19 +56,40 @@ python3 scripts/measure-collector.py --binary /tmp/komposyn-lg-measure --scenari
 ```
 
 `--events`, `--files`, and `--record-padding-bytes` control generated workload
-size. `--warmup` is excluded from measured CSV samples. The `cold` scenario
-starts collection against an empty database and includes process start and
-backfill in its measurement. Append and soak scenarios modify a generated file
-while the collector is running. They are diagnostic workloads, not claims about
-typical user activity.
+size. Before each run, the harness imports the generated fixture into a separate
+disposable validation database and checks exact request counts and token totals.
+It appends one generated usage event to the first file, verifies that exactly
+one event and the expected token delta appear, then restores the fixture before
+the measured run. Each file has its own synthetic session. Codex cumulative
+token counters increase within that file's session and reset for the next file.
+
+Warm scenarios wait for a healthy completed initial poll with the expected
+event count and totals, then apply `--warmup`. `measurement_started_utc` marks
+the boundary after that poll and warmup. The `cold` scenario is foreground-only:
+wall time starts immediately before process launch and ends at the first
+successful completed poll. Process CPU sampling starts at the first `/proc`
+sample after launch, so the manifest identifies the small CPU interval before
+that sample as excluded. `--duration` sets the measured window for warm
+scenarios; `--startup-timeout` bounds initial backfill. Append and soak scenarios
+modify a generated file while the collector is running. They are diagnostic
+workloads, not claims about typical user activity.
 
 The `--mode foreground` default measures the foreground collector PID directly.
 Use `--mode detached` to start the managed background collector. The harness
 reads `watch status --format json` and samples the PID reported by the collector,
-not the short-lived command used to launch or inspect it. Both modes request a
-cooperative stop and escalate cleanup only if the foreground process does not
-exit. The detached collector is stopped in a `finally` cleanup path, including
-on Ctrl-C and errors.
+not the short-lived command used to launch or inspect it. The detached launch
+duration and initial completed poll time are recorded separately; warmup starts
+only after that poll. `elapsed_seconds` ends at the measurement boundary and
+excludes final-poll draining and shutdown. Shutdown duration is a separate
+manifest field.
+
+Both modes request cooperative stop. For detached runs, the harness checks the
+`watch stop` result, then verifies the same instance is stopped and its process
+has exited. On Linux only, it may send a bounded SIGTERM/SIGKILL fallback after
+checking the exact executable, `watch serve` arguments, data directory, and
+instance ID. If it cannot prove termination, it leaves the workspace intact
+and prints the PID and path for manual inspection. This applies on Ctrl-C,
+timeouts, and command failures too.
 
 ## Reading Linux measurements
 
