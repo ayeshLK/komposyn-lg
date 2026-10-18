@@ -191,5 +191,19 @@ class ColdSamplingTests(unittest.TestCase):
         self.assertEqual(sample_file.getvalue().count("\n"), 1)
         self.assertIn("0.150,0.030", sample_file.getvalue())
 
+
+class UsageDrainTests(unittest.TestCase):
+    def test_waits_for_exact_usage_totals_after_a_completed_poll(self):
+        stale = HARNESS.expected_usage("claude", 10)
+        current = HARNESS.expected_usage("claude", 11)
+        with (mock.patch.object(HARNESS, "read_usage_summary", side_effect=(stale, current)) as read,
+              mock.patch.object(HARNESS.time, "monotonic", side_effect=(0.0, 0.1)),
+              mock.patch.object(HARNESS.time, "sleep", return_value=None)):
+            result = HARNESS.wait_for_usage_summary(
+                Path("binary"), Path("data"), Path("logs"), "claude", 11, "final", 1.0)
+
+        self.assertEqual(result, current)
+        self.assertEqual(read.call_count, 2)
+
 if __name__ == "__main__":
     unittest.main()

@@ -168,6 +168,25 @@ def assert_usage_summary(summary: dict, profile: str, count: int, label: str) ->
         raise RuntimeError(f"{label} usage totals mismatch: expected {expected}, got {actual}")
 
 
+def wait_for_usage_summary(binary: Path, data_dir: Path, logs: Path, profile: str,
+                           count: int, label: str, timeout: float) -> dict:
+    deadline = time.monotonic() + timeout
+    attempt = 0
+    last_error = None
+    while True:
+        suffix = f"-{attempt}" if attempt else ""
+        summary = read_usage_summary(binary, data_dir, logs, label + suffix, timeout=10)
+        try:
+            assert_usage_summary(summary, profile, count, label)
+            return summary
+        except RuntimeError as exc:
+            last_error = exc
+        if time.monotonic() >= deadline:
+            raise TimeoutError(f"usage totals did not converge before the drain deadline: {last_error}")
+        attempt += 1
+        time.sleep(0.25)
+
+
 def validate_generated_fixture(binary: Path, source: Path, profile: str, count: int,
                                 paths: list[Path], logs: Path, workspace: Path) -> dict:
     validation_data = workspace / "fixture-validation-data"
@@ -714,8 +733,12 @@ def main() -> int:
                         time.sleep(0.25)
                     else:
                         raise TimeoutError(f"collector did not complete a poll after the final append; pid={pid}")
-                final_summary = read_usage_summary(binary, data, logs, "final-usage")
-                assert_usage_summary(final_summary, args.profile, expected_final, "measured collector run")
+                if last_append_utc is not None:
+                    wait_for_usage_summary(binary, data, logs, args.profile, expected_final,
+                                           "final-usage", max(args.drain_timeout, interval_seconds + 5))
+                else:
+                    final_summary = read_usage_summary(binary, data, logs, "final-usage")
+                    assert_usage_summary(final_summary, args.profile, expected_final, "measured collector run")
 
         manifest["appended_records"] = append_count
         manifest["final_fixture_bytes"] = sum(path.stat().st_size for path in paths)

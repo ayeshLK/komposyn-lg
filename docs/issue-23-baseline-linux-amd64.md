@@ -10,6 +10,7 @@ candidate core changes.
 - CLI source: `265bcd375cbd626232998ec9a3e3793ec09492f9` (current `master` after
   merging CLI measurement and lifecycle coverage).
 - Core dependency: published `github.com/ayeshLK/komposyn v0.7.0`.
+- Published core source commit: `d66b4117d8b7771f9c3c22b3b251e19054ba9e88`.
 - Core module checksum: `h1:y7c65NSsBgcQ4Wo8Cwac903dP9dzQ/53wz1nJMh9vaA=`.
 - Executable: `komposyn-lg 0.8.0 (core 0.7.0)`, Linux `amd64`, Go `1.26.9`,
   built with `CGO_ENABLED=0`, `-trimpath`, release version injection, and
@@ -73,3 +74,8 @@ committed. Re-run the documented commands in
 `--artifacts` directory for new raw output. Preserve the executable flags,
 host, generated fixture parameters, poll interval, warmup, and measurement
 duration when comparing a future candidate.
+
+This historical baseline used the published core `v0.7.0`, not the exact
+pre-optimization source commit requested for attribution. The matched
+before/after measurements using core commits `0943bc8` and `36fea986` are in
+[`issue-23-core-137-comparison.md`](issue-23-core-137-comparison.md).
