@@ -1,4 +1,4 @@
-.PHONY: fmt lint test build installer-trust release-provenance check release licenses clean
+.PHONY: fmt lint test build installer-trust release-provenance release-executable-copy check release licenses clean
 
 VERSION ?= v0.1.0
 OUTPUT_DIR ?= dist
@@ -21,7 +21,10 @@ installer-trust:
 release-provenance:
 	bash scripts/test-release-provenance.sh
 
-check: fmt lint test build installer-trust release-provenance
+release-executable-copy:
+	bash scripts/test-copy-release-executable.sh
+
+check: fmt lint test build installer-trust release-provenance release-executable-copy
 
 release:
 	bash scripts/build-release.sh $(VERSION) $(OUTPUT_DIR)

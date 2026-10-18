@@ -93,7 +93,7 @@ run_cli() {
 }
 source_dir="$tmp_dir/source"
 mkdir -p "$source_dir"
-cp "$tmp_dir/$binary_name" "$binary_path"
+bash "$root_dir/scripts/copy-release-executable.sh" "$tmp_dir/$binary_name" "$binary_path"
 chmod 0755 "$binary_path"
 target="${asset#komposyn-lg_${version}_}"
 target="${target%.tar.gz}"
@@ -125,7 +125,7 @@ candidate_version_output="$("$binary_path" version)"
 # on private provider data or credentials.
 if [[ -n "$reference_binary" ]]; then
   [[ -x "$reference_binary" ]] || { echo "reference binary is not executable: $reference_binary" >&2; exit 1; }
-  cp "$reference_binary" "$binary_path"
+  bash "$root_dir/scripts/copy-release-executable.sh" "$reference_binary" "$binary_path"
   cat > "$source_dir/codex.jsonl" <<'EOF'
 {"type":"event_msg","id":"issue-46-cursor-record","timestamp":"2026-10-11T12:00:00Z","payload":{"type":"token_count","session_id":"cursor-session","project_id":"cursor-project","model":"gpt-test","info":{"total_token_usage":{"input_tokens":100,"output_tokens":8}}}}
 EOF
@@ -185,7 +185,7 @@ fi
 if [[ -z "$reference_binary" ]]; then
   run_cli watch stop --timeout 10s >/dev/null
 fi
-cp "$tmp_dir/$binary_name" "$binary_path"
+bash "$root_dir/scripts/copy-release-executable.sh" "$tmp_dir/$binary_name" "$binary_path"
 if [[ -n "$reference_binary" ]]; then
   upgraded_report="$(run_cli usage --format json)"
   grep -Eq '"total_tokens"[[:space:]]*:[[:space:]]*123' <<<"$upgraded_report" || {
