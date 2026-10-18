@@ -57,7 +57,11 @@ $global:LASTEXITCODE = 0
         return $global:TestReleaseMetadata
     }
 
-    # Keep this validation aligned with the copy/paste Windows bootstrap in issue #53.
+    # Keep the downloadable architecture helper aligned with the README bootstrap.
+    $readme = Get-Content -Raw (Join-Path $PSScriptRoot '..\README.md')
+    if ($readme -notmatch [regex]::Escape('https://raw.githubusercontent.com/ayeshLK/komposyn-lg/master/scripts/windows-architecture.ps1 -OutFile windows-architecture.ps1')) {
+        throw 'README Windows bootstrap must download the architecture helper beside the installer'
+    }
     $resolveBootstrapTag = {
         param($Release)
         if ($null -eq $Release -or $Release -isnot [pscustomobject] -or

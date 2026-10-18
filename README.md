@@ -67,7 +67,8 @@ Requires PowerShell and
 
 ```powershell
 Invoke-WebRequest -Uri https://raw.githubusercontent.com/ayeshLK/komposyn-lg/master/scripts/install.ps1 -OutFile komposyn-install.ps1
-# Review komposyn-install.ps1 before running it.
+Invoke-WebRequest -Uri https://raw.githubusercontent.com/ayeshLK/komposyn-lg/master/scripts/windows-architecture.ps1 -OutFile windows-architecture.ps1
+# Review both downloaded scripts before running the installer.
 .\komposyn-install.ps1
 ```
 
