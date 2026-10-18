@@ -33,7 +33,7 @@ not invoices; missing pricing evidence remains unknown. See
 
 ## Install
 
-Signed releases are available for **Linux, macOS, and Windows**, on both
+Signed stable releases are published for **Linux, macOS, and Windows**, on both
 **amd64 (x86-64) and arm64**. You do not need Go to install a release.
 
 The installers resolve the **latest stable release**, select your platform, and
