@@ -54,6 +54,11 @@ install_dir="$tmp_dir/bin"
 data_dir="$tmp_dir/data"
 source_dir="$tmp_dir/source"
 mkdir -p "$old_dir" "$install_dir" "$data_dir" "$source_dir"
+# macOS exposes temporary directories through symlinked paths (for example,
+# /var/folders -> /private/var/folders). The CLI resolves registered source
+# paths, so use the physical path for both registration and the preservation
+# assertion below.
+source_dir="$(cd "$source_dir" && pwd -P)"
 cleanup() {
 	if [[ -x "$install_dir/komposyn-lg" && -f "$data_dir/token-logger.db" ]]; then
 		TOKEN_LOGGER_DATA_DIR="$data_dir" "$install_dir/komposyn-lg" watch stop --timeout 10s >/dev/null 2>&1 || true
@@ -203,8 +208,9 @@ reimport_result="$("$binary" import "$source_dir/normal.jsonl" --format json)"
 	echo "source cursor was not preserved: $reimport_result" >&2
 	exit 1
 }
-[[ "$("$binary" watch list --format json)" == *"$source_dir"* ]] || {
-	echo 'collector registry was not preserved' >&2
+registered_sources="$("$binary" watch list --format json)"
+jq -e --arg path "$source_dir" '.sources | any(.[]; .path == $path)' <<<"$registered_sources" >/dev/null || {
+	echo "collector registry was not preserved: expected path=$source_dir, sources=$registered_sources" >&2
 	exit 1
 }
 python3 - "$data_dir/token-logger.db" <<'PY'
