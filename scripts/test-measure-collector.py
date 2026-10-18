@@ -20,6 +20,7 @@ HARNESS = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(HARNESS)
 
 
+@unittest.skipUnless(sys.platform.startswith("linux"), "Linux process-identity cleanup regressions")
 class DetachedCleanupTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="measure-cleanup-test-")
