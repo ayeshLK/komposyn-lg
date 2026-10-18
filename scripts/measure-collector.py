@@ -227,6 +227,8 @@ def machine_metadata() -> dict[str, object]:
 
 
 def process_alive(pid: int) -> bool | None:
+    if os.name == "nt":
+        return windows_process_alive(pid)
     try:
         os.kill(pid, 0)
         return True
@@ -236,6 +238,43 @@ def process_alive(pid: int) -> bool | None:
         return True
     except OSError:
         return None
+
+
+def windows_process_alive(pid: int, kernel32=None) -> bool | None:
+    """Query process state without sending a signal or terminating it."""
+    import ctypes
+    from ctypes import wintypes
+
+    if kernel32 is None:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+        kernel32.WaitForSingleObject.restype = wintypes.DWORD
+        kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+        kernel32.CloseHandle.restype = wintypes.BOOL
+
+    synchronize = 0x00100000
+    query_limited_information = 0x1000
+    wait_object_0 = 0
+    wait_timeout = 258
+    handle = kernel32.OpenProcess(synchronize | query_limited_information, False, pid)
+    if not handle:
+        error = ctypes.get_last_error()
+        if error == 87:  # ERROR_INVALID_PARAMETER: the process ID no longer exists.
+            return False
+        if error == 5:  # ERROR_ACCESS_DENIED still means a process exists.
+            return True
+        return None
+    try:
+        result = kernel32.WaitForSingleObject(handle, 0)
+        if result == wait_object_0:
+            return False
+        if result == wait_timeout:
+            return True
+        return None
+    finally:
+        kernel32.CloseHandle(handle)
 
 
 def linux_process_identity(pid: int, binary: Path, data_dir: Path, instance_id: str | None = None) -> bool | None:
@@ -447,6 +486,17 @@ def write_metric_sample(sample_file, pid: int, start_ticks: tuple[int, int] | No
     return current, sample_time, start_ticks
 
 
+def sample_cold_metrics(sample_file, pid: int, start_ticks: tuple[int, int] | None,
+                        previous: dict | None, previous_time: float, started: float,
+                        last_sample: float, *, force: bool = False) -> tuple[dict | None, float, tuple[int, int] | None, float]:
+    now = time.monotonic()
+    if not force and last_sample != 0 and now - last_sample < 0.5:
+        return previous, previous_time, start_ticks, last_sample
+    previous, previous_time, start_ticks = write_metric_sample(
+        sample_file, pid, start_ticks, previous, previous_time, started)
+    return previous, previous_time, start_ticks, now
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", required=True, type=Path, help="explicit standalone executable to measure")
@@ -579,14 +629,12 @@ def main() -> int:
                 cpu_origin = None
                 last_sample = 0.0
 
-                def sample_cold() -> None:
+                def sample_cold(force: bool = False) -> None:
                     nonlocal previous, previous_time, cpu_origin, last_sample
                     ensure_collector_running()
-                    now = time.monotonic()
-                    if last_sample == 0 or now - last_sample >= 0.5:
-                        previous, previous_time, cpu_origin = write_metric_sample(
-                            sample_file, pid, cpu_origin, previous, previous_time, measure_start)
-                        last_sample = now
+                    previous, previous_time, cpu_origin, last_sample = sample_cold_metrics(
+                        sample_file, pid, cpu_origin, previous, previous_time, measure_start,
+                        last_sample, force=force)
 
                 sample_cold()
                 cold_status = wait_for_initial_poll(binary, data, logs, args.profile, args.events,
@@ -594,6 +642,7 @@ def main() -> int:
                 if cold_status.get("pid") != pid:
                     raise RuntimeError("cold poll status does not belong to the launched foreground PID")
                 manifest["collector_instance_id"] = cold_status.get("instance_id")
+                sample_cold(force=True)
                 measurement_end = time.monotonic()
                 manifest["measurement_finished_utc"] = dt.datetime.now(dt.timezone.utc).isoformat()
                 manifest["elapsed_seconds"] = round(measurement_end - measure_start, 3)
