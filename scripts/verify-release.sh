@@ -187,7 +187,10 @@ if [[ -z "$reference_binary" ]]; then
 fi
 bash "$root_dir/scripts/copy-release-executable.sh" "$tmp_dir/$binary_name" "$binary_path"
 if [[ -n "$reference_binary" ]]; then
-  upgraded_report="$(run_cli usage --format json)"
+  # The synthetic historical fixture is dated 2026-10-11. Keep this assertion
+  # independent of the CLI's rolling default report window so it remains valid
+  # after the fixture falls outside the latest seven days.
+  upgraded_report="$(run_cli usage --format json --from 1970-01-01T00:00:00Z)"
   grep -Eq '"total_tokens"[[:space:]]*:[[:space:]]*123' <<<"$upgraded_report" || {
     echo "historical usage total was not preserved by upgrade: $upgraded_report" >&2
     exit 1
@@ -296,7 +299,9 @@ PY
     if [[ "$windows_host" == true ]]; then
       recovery_data_dir="$(cygpath -w "$recovery_dir")"
     fi
-    restored_report="$(TOKEN_LOGGER_DATA_DIR="$recovery_data_dir" "$reference_binary" usage --format json)"
+    # The v0.6 fixture has the same fixed historical timestamp, so query a
+    # range that includes it rather than relying on the rolling default window.
+    restored_report="$(TOKEN_LOGGER_DATA_DIR="$recovery_data_dir" "$reference_binary" usage --format json --from 1970-01-01T00:00:00Z)"
     grep -Eq '"total_tokens"[[:space:]]*:[[:space:]]*123' <<<"$restored_report" || {
       echo "compatible reference binary could not read the restored pre-migration backup" >&2
       exit 1
