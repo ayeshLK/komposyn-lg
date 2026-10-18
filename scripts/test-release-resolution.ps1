@@ -59,7 +59,8 @@ $global:LASTEXITCODE = 0
 
     # Keep the downloadable architecture helper aligned with the README bootstrap.
     $readme = Get-Content -Raw (Join-Path $PSScriptRoot '..\README.md')
-    if ($readme -notmatch [regex]::Escape('https://raw.githubusercontent.com/ayeshLK/komposyn-lg/master/scripts/windows-architecture.ps1 -OutFile windows-architecture.ps1')) {
+    $architectureDownload = [regex]::Escape('https://raw.githubusercontent.com/ayeshLK/komposyn-lg/master/scripts/windows-architecture.ps1') + '\s+-OutFile\s+\(Join-Path \$d ''windows-architecture\.ps1''\)'
+    if ($readme -notmatch $architectureDownload) {
         throw 'README Windows bootstrap must download the architecture helper beside the installer'
     }
     $resolveBootstrapTag = {
