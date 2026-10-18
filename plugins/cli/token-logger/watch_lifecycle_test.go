@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -29,6 +30,23 @@ import (
 )
 
 const lifecycleAppendRecord = `{"type":"event_msg","id":"lifecycle-token-count-3","timestamp":"2026-10-11T10:00:06Z","payload":{"type":"token_count","session_id":"codex-session-fixture","info":{"total_token_usage":{"input_tokens":200,"cached_input_tokens":30,"output_tokens":60,"reasoning_output_tokens":15,"total_tokens":260}}}}`
+
+type lifecycleBuffer struct {
+	mu sync.Mutex
+	bytes.Buffer
+}
+
+func (buffer *lifecycleBuffer) Write(value []byte) (int, error) {
+	buffer.mu.Lock()
+	defer buffer.mu.Unlock()
+	return buffer.Buffer.Write(value)
+}
+
+func (buffer *lifecycleBuffer) String() string {
+	buffer.mu.Lock()
+	defer buffer.mu.Unlock()
+	return buffer.Buffer.String()
+}
 
 func lifecycleFixture(t *testing.T) string {
 	t.Helper()
@@ -62,30 +80,52 @@ func waitLifecycleStatus(t *testing.T, store *tokenlogger.Store, condition func(
 
 func runForegroundLifecycle(t *testing.T, dataDir, source string, ready func(tokenlogger.CollectorRuntimeStatus) bool) tokenlogger.CollectorRuntimeStatus {
 	t.Helper()
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan int, 1)
-	go func() {
-		done <- runWatchWithContext([]string{"foreground", source, "--interval", "10ms", "--data-dir", dataDir}, io.Discard, io.Discard, ctx)
-	}()
-	store := openStoreWhileCollectorStarts(t, filepath.Join(dataDir, "token-logger.db"))
+	store, stop := startForegroundLifecycle(t, dataDir, []string{source})
 	status := waitLifecycleStatus(t, store, ready)
-	cancel()
-	select {
-	case code := <-done:
-		if code != 0 {
-			t.Fatalf("foreground collector exit code=%d", code)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("foreground collector did not stop after cancellation")
-	}
+	stop()
 	status, err := store.CollectorRuntimeStatus(time.Second)
 	if err != nil || status.State != "stopped" {
 		t.Fatalf("foreground final status=%+v err=%v", status, err)
 	}
-	if err := store.Close(); err != nil {
+	return status
+}
+
+func startForegroundLifecycle(t *testing.T, dataDir string, roots []string) (*tokenlogger.Store, func()) {
+	t.Helper()
+	store, err := tokenlogger.Open(filepath.Join(dataDir, "token-logger.db"))
+	if err != nil {
 		t.Fatal(err)
 	}
-	return status
+	// Register the store first so the collector cleanup runs before the database closes.
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Errorf("close foreground lifecycle store: %v", err)
+		}
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan int, 1)
+	stdout, stderr := &lifecycleBuffer{}, &lifecycleBuffer{}
+	go func() {
+		args := append([]string{"foreground"}, roots...)
+		args = append(args, "--interval", "10ms", "--data-dir", dataDir)
+		done <- runWatchWithContext(args, stdout, stderr, ctx)
+	}()
+	var stopOnce sync.Once
+	stop := func() {
+		stopOnce.Do(func() {
+			cancel()
+			select {
+			case code := <-done:
+				if code != 0 {
+					t.Errorf("foreground collector exit code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+				}
+			case <-time.After(5 * time.Second):
+				t.Errorf("foreground collector did not stop after cancellation; stdout=%q stderr=%q", stdout.String(), stderr.String())
+			}
+		})
+	}
+	t.Cleanup(stop)
+	return store, stop
 }
 
 func TestPositionalForegroundAppendPendingTailAndRestart(t *testing.T) {
@@ -98,12 +138,7 @@ func TestPositionalForegroundAppendPendingTailAndRestart(t *testing.T) {
 		t.Fatalf("foreground did not preserve explicit 10ms interval and mode: %+v", initial)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan int, 1)
-	go func() {
-		done <- runWatchWithContext([]string{"foreground", source, "--interval", "10ms", "--data-dir", dataDir}, io.Discard, io.Discard, ctx)
-	}()
-	store := openStoreWhileCollectorStarts(t, filepath.Join(dataDir, "token-logger.db"))
+	store, stop := startForegroundLifecycle(t, dataDir, []string{source})
 	waitLifecycleStatus(t, store, func(status tokenlogger.CollectorRuntimeStatus) bool {
 		return status.Outcomes.UnchangedSnapshot > 0 && status.LastCompletedAt != nil
 	})
@@ -136,15 +171,7 @@ func TestPositionalForegroundAppendPendingTailAndRestart(t *testing.T) {
 	completed := waitLifecycleStatus(t, store, func(status tokenlogger.CollectorRuntimeStatus) bool {
 		return status.Imported == 1 && !status.Pending && status.LastCompletedAt != nil
 	})
-	cancel()
-	select {
-	case code := <-done:
-		if code != 0 {
-			t.Fatalf("foreground collector exit code=%d", code)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("foreground collector did not stop after cancellation")
-	}
+	stop()
 	completed, err = store.CollectorRuntimeStatus(time.Second)
 	if err != nil || completed.State != "stopped" {
 		t.Fatalf("foreground final status=%+v err=%v", completed, err)
@@ -152,10 +179,6 @@ func TestPositionalForegroundAppendPendingTailAndRestart(t *testing.T) {
 	if completed.Outcomes.DeferredIncompleteTail == 0 {
 		t.Fatalf("run history lost pending-tail outcome: %+v", completed)
 	}
-	if err := store.Close(); err != nil {
-		t.Fatal(err)
-	}
-
 	restarted := runForegroundLifecycle(t, dataDir, source, func(status tokenlogger.CollectorRuntimeStatus) bool {
 		return status.Outcomes.UnchangedSnapshot > 0 && status.LastCompletedAt != nil
 	})
@@ -167,7 +190,6 @@ func TestPositionalForegroundAppendPendingTailAndRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
 	if count, err := store.EventCount(); err != nil || count != 3 {
 		t.Fatalf("event count after completing tail=%d err=%v, want 3", count, err)
 	}
@@ -191,12 +213,7 @@ func TestPositionalForegroundDeduplicatesOverlappingRoots(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(child, "normal.jsonl"), fixture, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan int, 1)
-	go func() {
-		done <- runWatchWithContext([]string{"foreground", root, child, "--interval", "10ms", "--data-dir", dataDir}, io.Discard, io.Discard, ctx)
-	}()
-	store := openStoreWhileCollectorStarts(t, filepath.Join(dataDir, "token-logger.db"))
+	store, stop := startForegroundLifecycle(t, dataDir, []string{root, child})
 	status := waitLifecycleStatus(t, store, func(status tokenlogger.CollectorRuntimeStatus) bool {
 		count, countErr := store.EventCount()
 		return countErr == nil && count == 2 && status.DiscoveredSources == 1
@@ -204,21 +221,10 @@ func TestPositionalForegroundDeduplicatesOverlappingRoots(t *testing.T) {
 	if status.SourceCount != 2 {
 		t.Fatalf("overlapping roots were not retained as configured roots: %+v", status)
 	}
-	cancel()
-	select {
-	case code := <-done:
-		if code != 0 {
-			t.Fatalf("foreground collector exit code=%d", code)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("foreground collector did not stop after cancellation")
-	}
+	stop()
 	registered, err := store.ListCollectorSources(false)
 	if err != nil || len(registered) != 0 {
 		t.Fatalf("overlapping positional roots mutated the source registry: sources=%+v err=%v", registered, err)
-	}
-	if err := store.Close(); err != nil {
-		t.Fatal(err)
 	}
 }
 
@@ -228,16 +234,23 @@ func TestEmbeddedCollectorSyntheticRootKeepsRegistrySeparate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Errorf("close embedded lifecycle store: %v", err)
+		}
+	})
 	runtime, err := startInteractiveCollector(store, []tokenlogger.CollectorRoot{{Path: filepath.Dir(lifecycleFixture(t)), Required: true}}, 10*time.Millisecond)
 	if err != nil {
 		t.Fatal(err)
 	}
+	var stopOnce sync.Once
+	stop := func() { stopOnce.Do(runtime.stop) }
+	t.Cleanup(stop)
 	waitLifecycleStatus(t, store, func(status tokenlogger.CollectorRuntimeStatus) bool {
 		count, countErr := store.EventCount()
 		return countErr == nil && count == 2 && status.Mode == "embedded" && status.LastCompletedAt != nil
 	})
-	runtime.stop()
+	stop()
 	status, err := store.CollectorRuntimeStatus(time.Second)
 	if err != nil || status.State != "stopped" || status.Mode != "embedded" {
 		t.Fatalf("embedded collector final status=%+v err=%v", status, err)
@@ -268,7 +281,11 @@ func TestCollectorLeaseHeartbeatSurvivesLongPoll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Errorf("close heartbeat lifecycle store: %v", err)
+		}
+	})
 	const staleAfter = 4 * time.Second
 	if _, err := store.AcquireCollectorLease("slow-poll", 1, tokenlogger.Version, "background", 100*time.Millisecond, staleAfter); err != nil {
 		t.Fatal(err)
@@ -281,9 +298,11 @@ func TestCollectorLeaseHeartbeatSurvivesLongPoll(t *testing.T) {
 		t.Fatalf("initial heartbeat=%+v err=%v", before, err)
 	}
 	poller := &lifecycleGatePoller{started: make(chan struct{}), release: make(chan struct{})}
+	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
+	var renewed tokenlogger.CollectorRuntimeStatus
 	go func() {
-		_, pollErr, heartbeatErr, stop := pollWithLeaseHeartbeat(context.Background(), store, "slow-poll", poller, staleAfter)
+		_, pollErr, heartbeatErr, stop := pollWithLeaseHeartbeat(ctx, store, "slow-poll", poller, staleAfter)
 		if heartbeatErr != nil {
 			done <- heartbeatErr
 		} else if stop {
@@ -292,9 +311,30 @@ func TestCollectorLeaseHeartbeatSurvivesLongPoll(t *testing.T) {
 			done <- pollErr
 		}
 	}()
-	<-poller.started
+	var releaseOnce sync.Once
+	joined := false
+	t.Cleanup(func() {
+		if joined {
+			return
+		}
+		releaseOnce.Do(func() { close(poller.release) })
+		cancel()
+		select {
+		case pollErr := <-done:
+			joined = true
+			if pollErr != nil && !errors.Is(pollErr, context.Canceled) {
+				t.Errorf("join gated heartbeat poll during cleanup: %v", pollErr)
+			}
+		case <-time.After(5 * time.Second):
+			t.Errorf("gated heartbeat poll did not finish during cleanup; latest status=%+v", renewed)
+		}
+	})
+	select {
+	case <-poller.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("gated heartbeat poll did not start")
+	}
 	deadline := time.Now().Add(4 * time.Second)
-	var renewed tokenlogger.CollectorRuntimeStatus
 	for time.Now().Before(deadline) {
 		renewed, err = store.CollectorRuntimeStatus(staleAfter)
 		if err == nil && renewed.HeartbeatAt != nil && renewed.HeartbeatAt.After(*before.HeartbeatAt) {
@@ -314,12 +354,14 @@ func TestCollectorLeaseHeartbeatSurvivesLongPoll(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if err != nil || renewed.Stale || renewed.State != "running" {
+	if err != nil || renewed.HeartbeatAt == nil || !renewed.HeartbeatAt.After(firstRenewal) || renewed.Stale || renewed.State != "running" {
 		t.Fatalf("lease expired during long poll without repeated heartbeat: status=%+v err=%v", renewed, err)
 	}
-	close(poller.release)
+	releaseOnce.Do(func() { close(poller.release) })
 	select {
 	case pollErr := <-done:
+		joined = true
+		cancel()
 		if pollErr != nil {
 			t.Fatalf("long poll returned error: %v", pollErr)
 		}
@@ -361,14 +403,73 @@ func TestWatchStopReportsTimeoutWhenLeaseOwnerDoesNotStop(t *testing.T) {
 	}
 }
 
+func registerDetachedStopCleanup(t *testing.T, store *tokenlogger.Store, instance, closedMarker string) func() {
+	t.Helper()
+	var stopOnce sync.Once
+	stop := func() {
+		stopOnce.Do(func() {
+			deadline := time.Now().Add(15 * time.Second)
+			requested := false
+			var last tokenlogger.CollectorRuntimeStatus
+			for time.Now().Before(deadline) {
+				if _, markerErr := os.Stat(closedMarker); markerErr == nil {
+					return
+				} else if !os.IsNotExist(markerErr) {
+					t.Errorf("check detached collector close marker during cleanup: %v", markerErr)
+					return
+				}
+				status, err := store.CollectorRuntimeStatus(0)
+				if err != nil {
+					t.Errorf("read detached collector status during cleanup: %v", err)
+					return
+				}
+				last = status
+				if status.InstanceID == instance {
+					switch status.State {
+					case "stopped", "failed":
+						for time.Now().Before(deadline) {
+							if _, markerErr := os.Stat(closedMarker); markerErr == nil {
+								return
+							} else if !os.IsNotExist(markerErr) {
+								t.Errorf("check detached collector close marker: %v", markerErr)
+								return
+							}
+							time.Sleep(25 * time.Millisecond)
+						}
+						t.Errorf("detached collector reached terminal status but did not close its store before cleanup; status=%+v", status)
+						return
+					case "starting", "running", "degraded", "stopping":
+						if !requested {
+							var requestErr error
+							requested, requestErr = store.RequestCollectorStop()
+							if requestErr != nil {
+								t.Errorf("request detached collector stop during cleanup: %v (status=%+v)", requestErr, status)
+								return
+							}
+						}
+					}
+				}
+				time.Sleep(25 * time.Millisecond)
+			}
+			t.Errorf("detached collector did not stop before cleanup timeout; last status=%+v", last)
+		})
+	}
+	t.Cleanup(stop)
+	return stop
+}
+
 func TestDetachedWatchServeCollectsRegisteredSourceAndStops(t *testing.T) {
 	if os.Getenv("KOMPOSYN_DETACHED_WATCH_HELPER") == "1" {
 		dataDir := os.Getenv("KOMPOSYN_DETACHED_WATCH_DATA_DIR")
 		instance := os.Getenv("KOMPOSYN_DETACHED_WATCH_INSTANCE")
-		if dataDir == "" || instance == "" {
+		closedMarker := os.Getenv("KOMPOSYN_DETACHED_WATCH_CLOSED_MARKER")
+		if dataDir == "" || instance == "" || closedMarker == "" {
 			os.Exit(2)
 		}
 		code := runWatchServe([]string{"--data-dir", dataDir, "--interval", "10ms", "--instance", instance}, io.Discard, context.Background())
+		if err := os.WriteFile(closedMarker, []byte("closed"), 0o600); err != nil {
+			os.Exit(3)
+		}
 		os.Exit(code)
 	}
 
@@ -378,10 +479,12 @@ func TestDetachedWatchServeCollectsRegisteredSourceAndStops(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Errorf("close detached lifecycle store: %v", err)
+		}
+	})
 	if _, err := store.RegisterCollectorSource(root, true); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
 	executable, err := os.Executable()
@@ -392,24 +495,24 @@ func TestDetachedWatchServeCollectsRegisteredSourceAndStops(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	closedMarker := filepath.Join(dataDir, "detached-closed")
 	t.Setenv("KOMPOSYN_DETACHED_WATCH_HELPER", "1")
 	t.Setenv("KOMPOSYN_DETACHED_WATCH_DATA_DIR", dataDir)
 	t.Setenv("KOMPOSYN_DETACHED_WATCH_INSTANCE", instance)
+	t.Setenv("KOMPOSYN_DETACHED_WATCH_CLOSED_MARKER", closedMarker)
+	stop := registerDetachedStopCleanup(t, store, instance, closedMarker)
 	if err := startDetachedCollector(executable, []string{"-test.run=^TestDetachedWatchServeCollectsRegisteredSourceAndStops$"}); err != nil {
 		t.Fatal(err)
 	}
-	store = openStoreWhileCollectorStarts(t, filepath.Join(dataDir, "token-logger.db"))
-	defer store.Close()
 	waitLifecycleStatus(t, store, func(status tokenlogger.CollectorRuntimeStatus) bool {
 		count, countErr := store.EventCount()
 		return countErr == nil && count == 2 && status.Mode == "background" && status.LastCompletedAt != nil
 	})
-	if requested, err := store.RequestCollectorStop(); err != nil || !requested {
-		t.Fatalf("request detached collector stop=%t err=%v", requested, err)
+	stop()
+	status, err := store.CollectorRuntimeStatus(time.Second)
+	if err != nil || status.State != "stopped" || status.InstanceID != instance {
+		t.Fatalf("detached collector did not stop cleanly: status=%+v err=%v", status, err)
 	}
-	status := waitLifecycleStatus(t, store, func(status tokenlogger.CollectorRuntimeStatus) bool {
-		return status.State == "stopped" && status.InstanceID == instance
-	})
 	if status.Imported != 2 || status.SourceCount != 1 {
 		t.Fatalf("detached collector did not persist import and source health: %+v", status)
 	}
