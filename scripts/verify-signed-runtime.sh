@@ -65,7 +65,7 @@ PY
 )"
   printf '%s\n' "$init_request" '{"protocol":"komposyn.token-logger","version":1,"id":"stop","method":"shutdown"}' | "$tmp/$binary" harness > "$tmp/protocol.jsonl"
 fi
-grep -q '"version":1' "$tmp/protocol.jsonl" || { echo 'protocol v1 initialize/shutdown failed' >&2; exit 1; }
+python3 "$(dirname "${BASH_SOURCE[0]}")/verify-protocol-smoke.py" "$tmp/protocol.jsonl" "$version" "$core_version"
 [[ -f "$tmp/probe-data/token-logger.db" ]] || { echo 'protocol initialize did not use its isolated data directory' >&2; exit 1; }
 [[ ! -e "$tmp/unrelated-data/token-logger.db" && ! -e "$tmp/unrelated-data/settings.json" ]] || { echo 'runtime ignored explicit protocol data directory' >&2; exit 1; }
 echo "signed runtime smoke passed for $target CLI $version core $core_version (protocol v1; not full lifecycle coverage)"

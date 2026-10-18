@@ -413,29 +413,7 @@ jobs:
           RELEASE_COMMIT: ${{ needs.prepare.outputs.commit }}
         shell: bash
         run: |
-          mapfile -t archives < <(find dist -maxdepth 1 -type f \( -name 'komposyn-lg_*.tar.gz' -o -name 'komposyn-lg_*.zip' \) -print | sort)
-          [[ "${#archives[@]}" -eq 6 ]] || {
-            echo "Expected six release archives, found ${#archives[@]}" >&2
-            exit 1
-          }
-          assets=("${archives[@]}" "dist/SHA256SUMS")
-          for checksum_signature in dist/SHA256SUMS.sig dist/SHA256SUMS.pem; do
-            [[ -f "$checksum_signature" ]] || {
-              echo "Missing signed asset: $checksum_signature" >&2
-              exit 1
-            }
-            assets+=("$checksum_signature")
-          done
-          for archive in "${archives[@]}"; do
-            for suffix in .sig .pem; do
-              signed_asset="${archive}${suffix}"
-              [[ -f "$signed_asset" ]] || {
-                echo "Missing signed asset: $signed_asset" >&2
-                exit 1
-              }
-              assets+=("$signed_asset")
-            done
-          done
+          mapfile -t assets < <(bash scripts/list-release-assets.sh dist)
 
           notes_file="$RUNNER_TEMP/release-notes.md"
           awk -v version="${RELEASE_TAG#v}" '
@@ -533,7 +511,15 @@ jobs:
         run: |
           mkdir published
           gh release download "$RELEASE_TAG" --dir published
-          for artifact in dist/*; do
+          mapfile -t assets < <(bash scripts/list-release-assets.sh dist)
+          expected_assets="$(printf '%s\n' "${assets[@]}" | xargs -n1 basename | sort)"
+          actual_assets="$(find published -maxdepth 1 -type f -printf '%f\n' | sort)"
+          [[ "$actual_assets" == "$expected_assets" ]] || {
+            echo 'published release asset set differs from the upload allowlist' >&2
+            diff -u <(printf '%s\n' "$expected_assets") <(printf '%s\n' "$actual_assets") || true
+            exit 1
+          }
+          for artifact in "${assets[@]}"; do
             published_artifact="published/$(basename "$artifact")"
             [[ -f "$published_artifact" ]] || { echo "published release is missing $(basename "$artifact")" >&2; exit 1; }
             cmp -s "$artifact" "$published_artifact" || { echo "published asset differs from tested signed artifact: $(basename "$artifact")" >&2; exit 1; }

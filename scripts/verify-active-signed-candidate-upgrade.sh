@@ -232,9 +232,14 @@ backup_digest="$("$sha_tool" "$backup" | awk '{print $1}')"
 recovery_dir="$tmp_dir/restored-data"
 mkdir -p "$recovery_dir"
 cp "$backup" "$recovery_dir/token-logger.db"
-restored_report="$(TOKEN_LOGGER_DATA_DIR="$recovery_dir" "$old_dir/extracted/komposyn-lg" usage --format json)"
+restored_report="$(TOKEN_LOGGER_DATA_DIR="$recovery_dir" "$old_dir/komposyn-lg" usage --format json)"
 grep -Eq '"total_tokens"[[:space:]]*:[[:space:]]*[0-9]+' <<<"$restored_report" || {
 	echo 'historical v0.6.0 executable could not read the restored migration backup' >&2
+	exit 1
+}
+restored_usage="$(jq -c '.summary | {request_count,input_tokens,cached_input_tokens,cache_write_input_tokens,output_tokens,reasoning_output_tokens,total_tokens}' <<<"$restored_report")"
+[[ "$restored_usage" == "$before_usage" ]] || {
+	echo "restored historical usage differs from seeded totals: expected=$before_usage actual=$restored_usage" >&2
 	exit 1
 }
 "$binary" watch stop --timeout 10s >/dev/null

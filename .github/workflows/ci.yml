@@ -38,6 +38,11 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: ./scripts/test-release-resolution.ps1
+      - name: Test release asset contract and protocol smoke validation
+        if: runner.os == 'Linux'
+        run: |
+          bash scripts/test-release-assets.sh
+          python3 scripts/test-protocol-smoke.py
       - name: Check formatting
         shell: bash
         run: test -z "$(gofmt -l $(git ls-files '*.go'))"
