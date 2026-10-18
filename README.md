@@ -38,7 +38,6 @@ Signed stable releases are published for **Linux, macOS, and Windows**, on both
 
 The installers resolve the **latest stable release**, select your platform, and
 verify the archive's SHA-256 checksum and Cosign signature before installing it.
-Download the script, review it, then run it as shown below.
 
 ### macOS and Linux
 
@@ -47,9 +46,7 @@ Requires Bash, `curl`, `jq`, `tar`, `sha256sum` or `shasum`, and
 on your `PATH`.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ayeshLK/komposyn-lg/master/scripts/install.sh -o komposyn-install.sh
-# Review komposyn-install.sh before running it.
-bash komposyn-install.sh
+curl -fsSL https://raw.githubusercontent.com/ayeshLK/komposyn-lg/master/scripts/install.sh | bash
 ```
 
 The default installation directory is `~/.local/bin`. If it is not already on
@@ -66,10 +63,7 @@ Requires PowerShell and
 `PATH`.
 
 ```powershell
-Invoke-WebRequest -Uri https://raw.githubusercontent.com/ayeshLK/komposyn-lg/master/scripts/install.ps1 -OutFile komposyn-install.ps1
-Invoke-WebRequest -Uri https://raw.githubusercontent.com/ayeshLK/komposyn-lg/master/scripts/windows-architecture.ps1 -OutFile windows-architecture.ps1
-# Review both downloaded scripts before running the installer.
-.\komposyn-install.ps1
+$d = Join-Path $env:TEMP ([guid]::NewGuid()); New-Item -ItemType Directory -Path $d | Out-Null; try { Invoke-WebRequest -Uri https://raw.githubusercontent.com/ayeshLK/komposyn-lg/master/scripts/install.ps1 -OutFile (Join-Path $d 'install.ps1'); Invoke-WebRequest -Uri https://raw.githubusercontent.com/ayeshLK/komposyn-lg/master/scripts/windows-architecture.ps1 -OutFile (Join-Path $d 'windows-architecture.ps1'); & (Join-Path $d 'install.ps1') } finally { Remove-Item -LiteralPath $d -Recurse -Force }
 ```
 
 The default installation directory is `$env:LOCALAPPDATA\Komposyn\bin`.
@@ -152,17 +146,13 @@ removing the executable and **preserves your local usage history and settings**.
 **macOS and Linux:**
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ayeshLK/komposyn-lg/master/scripts/uninstall.sh -o komposyn-uninstall.sh
-# Review komposyn-uninstall.sh before running it.
-bash komposyn-uninstall.sh
+curl -fsSL https://raw.githubusercontent.com/ayeshLK/komposyn-lg/master/scripts/uninstall.sh | bash
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-Invoke-WebRequest -Uri https://raw.githubusercontent.com/ayeshLK/komposyn-lg/master/scripts/uninstall.ps1 -OutFile komposyn-uninstall.ps1
-# Review komposyn-uninstall.ps1 before running it.
-.\komposyn-uninstall.ps1
+Invoke-RestMethod https://raw.githubusercontent.com/ayeshLK/komposyn-lg/master/scripts/uninstall.ps1 | Invoke-Expression
 ```
 
 New installations store data in `$HOME/.komposyn/token-logger/data` (under the
