@@ -8,6 +8,12 @@ At the v0.8.0 standalone release:
 | Minimum supported core | `v0.7.0` |
 | Currently pinned core | `v0.7.0` |
 
+The standalone security support policy is latest-published-release only. At
+the time of this policy, `v0.8.0` is supported; a newer published CLI release
+supersedes it and older CLI releases receive no further security fixes. The
+`master` branch is the development source for the next signed release, not an
+independently supported binary line. See [the standalone security policy](../SECURITY.md).
+
 Because the supported floor and pin are the same, the normal CLI CI suite on
 `master` tests that version once; a duplicate matrix job adds no coverage. The
 core repository's candidate CI separately runs the public CLI suite against a

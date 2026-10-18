@@ -47,6 +47,9 @@ Installers must never accept both identities for new artifacts.
 - Dependency-update review covers public APIs, migrations and data recovery,
   protocol v1, exact JSON/CSV output, security/privacy notes, CLI/core/schema
   metadata, vulnerability scan, and release validation.
+- The standalone CLI support policy covers only the latest published CLI
+  release (`v0.8.0` at adoption); older releases are unsupported, and `master`
+  is development source rather than a supported release line.
 - Each repository owns advisories for code it owns. Cross-repository security
   fixes are prepared privately and coordinated so the fixed core tag and
   compatible signed CLI release are ready together; advisories map affected
