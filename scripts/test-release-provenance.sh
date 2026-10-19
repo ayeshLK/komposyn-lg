@@ -3,7 +3,7 @@ set -euo pipefail
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 resolver="$root_dir/scripts/resolve-core-version.sh"
-expected_version='v0.7.1'
+expected_version='v0.8.0'
 
 python3 - "$root_dir/release-please-config.json" <<'PY'
 import json
@@ -32,7 +32,7 @@ module example.com/provenance-fixture
 
 go 1.26.0
 
-require github.com/ayeshLK/komposyn v0.7.1
+require github.com/ayeshLK/komposyn v0.8.0
 
 replace github.com/ayeshLK/komposyn => ./core
 EOF
@@ -41,7 +41,7 @@ module github.com/ayeshLK/komposyn
 
 go 1.26.0
 EOF
-if (cd "$fixture" && GOWORK=off bash scripts/build-release.sh v0.7.1 "$tmp_dir/replaced-output"); then
+if (cd "$fixture" && GOWORK=off bash scripts/build-release.sh v0.8.1 "$tmp_dir/replaced-output"); then
 	echo 'release builder accepted a locally replaced core module' >&2
 	exit 1
 fi
@@ -55,7 +55,7 @@ module example.com/provenance-fixture
 
 go 1.26.0
 
-require github.com/ayeshLK/komposyn v0.7.1
+require github.com/ayeshLK/komposyn v0.8.0
 EOF
 cat > "$fixture/go.work" <<'EOF'
 go 1.26.0
@@ -64,7 +64,7 @@ use .
 
 replace github.com/ayeshLK/komposyn => ./core
 EOF
-if (cd "$fixture" && GOWORK="$fixture/go.work" bash scripts/build-release.sh v0.7.1 "$tmp_dir/workspace-output"); then
+if (cd "$fixture" && GOWORK="$fixture/go.work" bash scripts/build-release.sh v0.8.1 "$tmp_dir/workspace-output"); then
 	echo 'release builder accepted a Go workspace override' >&2
 	exit 1
 fi

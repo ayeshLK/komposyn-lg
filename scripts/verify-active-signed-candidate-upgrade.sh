@@ -20,6 +20,10 @@ candidate_dir="${2:?usage: verify-active-signed-candidate-upgrade.sh <historical
 repo='ayeshLK/komposyn'
 identity='^https://github.com/ayeshLK/komposyn/.github/workflows/release.yml@refs/heads/master$'
 candidate_identity='^https://github.com/ayeshLK/komposyn-lg/.github/workflows/release.yml@refs/heads/master$'
+if [[ "$old_tag" == "v0.8.1" ]]; then
+	repo='ayeshLK/komposyn-lg'
+	identity="$candidate_identity"
+fi
 issuer='https://token.actions.githubusercontent.com'
 host_os="$(uname -s | tr '[:upper:]' '[:lower:]')"
 host_arch="$(uname -m)"
@@ -103,6 +107,19 @@ cp "$fixture" "$source_dir/normal.jsonl"
 run_old settings --collector off --auto-start off >/dev/null
 run_old watch add "$source_dir" >/dev/null
 run_old import "$source_dir/normal.jsonl" --format json >/dev/null
+if [[ "$old_tag" == "v0.8.1" ]]; then
+	python3 - "$data_dir/token-logger.db" <<'PY'
+import sqlite3
+import sys
+db = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True)
+try:
+    version = db.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
+finally:
+    db.close()
+if version != 15:
+    raise SystemExit(f"signed CLI v0.8.1 seeded schema {version}; expected 15")
+PY
+fi
 run_old harness <<'EOF' >/dev/null
 {"protocol":"komposyn.token-logger","version":1,"id":"init","method":"initialize","params":{}}
 {"protocol":"komposyn.token-logger","version":1,"id":"record","method":"record","params":{"event":{"event_id":"issue-46-active-id","schema_version":1,"event_type":"model.request","occurred_at":"2026-10-11T12:00:00Z","project_id":"issue-46-active-project","session_id":"issue-46-active-session","client":{"name":"issue-46-active"},"provider":"openai","requested_model":"gpt-test","usage":{"input_tokens":7,"output_tokens":3},"provenance":{"adapter":"fixture","source_id":"issue-46-active","source_record":"1"},"ingestion_key":"issue-46:active-id"},"project":{"id":"issue-46-active-project","root":"/issue-46-active-fixture","display_name":"Issue 46 active fixture"},"session":{"id":"issue-46-active-session","project_id":"issue-46-active-project","client":{"name":"issue-46-active"}}}}
@@ -166,7 +183,7 @@ if kill -0 "$old_pid" 2>/dev/null; then
 	exit 1
 fi
 new_version="$($binary version)"
-[[ "$new_version" == *"komposyn-lg $candidate_version (core 0.7.1)"* ]] || {
+[[ "$new_version" == *"komposyn-lg $candidate_version (core 0.8.0)"* ]] || {
 	echo "candidate did not replace the historical executable: $new_version" >&2
 	exit 1
 }
@@ -234,6 +251,24 @@ if stopped < 1:
 PY
 backup="$(compgen -G "$data_dir/.komposyn-pre-migration-*.sqlite" | head -1)"
 [[ -n "$backup" && -f "$backup" ]] || { echo 'v0.6.0 upgrade did not create a migration backup' >&2; exit 1; }
+if [[ "$old_tag" == "v0.8.1" ]]; then
+	python3 - "$data_dir/token-logger.db" "$backup" <<'PY'
+import sqlite3
+import sys
+def read(path, query):
+    db = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        return db.execute(query).fetchone()
+    finally:
+        db.close()
+new_schema = read(sys.argv[1], "SELECT MAX(version) FROM schema_migrations")[0]
+backup_integrity = read(sys.argv[2], "PRAGMA integrity_check")[0]
+source, target = read(sys.argv[2], "SELECT source_schema,target_schema FROM komposyn_migration_backup")
+backup_schema = read(sys.argv[2], "SELECT MAX(version) FROM schema_migrations")[0]
+if (new_schema, backup_integrity, source, target, backup_schema) != (16, "ok", 15, 16, 15):
+    raise SystemExit(f"schema-15-to-16 backup mismatch: {(new_schema, backup_integrity, source, target, backup_schema)!r}")
+PY
+fi
 backup_digest="$("$sha_tool" "$backup" | awk '{print $1}')"
 recovery_dir="$tmp_dir/restored-data"
 mkdir -p "$recovery_dir"
@@ -248,7 +283,44 @@ restored_usage="$(jq -c '.summary | {request_count,input_tokens,cached_input_tok
 	echo "restored historical usage differs from seeded totals: expected=$before_usage actual=$restored_usage" >&2
 	exit 1
 }
-"$binary" watch stop --timeout 10s >/dev/null
+if [[ "$old_tag" == "v0.8.1" ]]; then
+	"$binary" watch stop --timeout 10s >/dev/null
+	refusal_before="$(python3 - "$data_dir/token-logger.db" <<'PY'
+import hashlib
+import pathlib
+import sys
+database = pathlib.Path(sys.argv[1])
+for suffix in ("", "-wal", "-shm"):
+    path = pathlib.Path(str(database) + suffix)
+    print(f"{suffix}:{hashlib.sha256(path.read_bytes()).hexdigest()}" if path.is_file() else f"{suffix}:missing")
+PY
+)"
+	if TOKEN_LOGGER_DATA_DIR="$data_dir" "$old_dir/komposyn-lg" usage --format json >"$tmp_dir/old-schema-refusal.txt" 2>&1; then
+		echo 'signed CLI v0.8.1 unexpectedly opened the migrated schema-16 database' >&2
+		exit 1
+	fi
+	grep -Fq 'newer than supported version' "$tmp_dir/old-schema-refusal.txt" || {
+		echo "signed CLI v0.8.1 failed for an unexpected reason: $(cat "$tmp_dir/old-schema-refusal.txt")" >&2
+		exit 1
+	}
+	refusal_after="$(python3 - "$data_dir/token-logger.db" <<'PY'
+import hashlib
+import pathlib
+import sys
+database = pathlib.Path(sys.argv[1])
+for suffix in ("", "-wal", "-shm"):
+    path = pathlib.Path(str(database) + suffix)
+    print(f"{suffix}:{hashlib.sha256(path.read_bytes()).hexdigest()}" if path.is_file() else f"{suffix}:missing")
+PY
+)"
+	[[ "$refusal_after" == "$refusal_before" ]] || {
+		echo "signed CLI v0.8.1 refusal mutated schema-16 database/sidecars: before=$refusal_before after=$refusal_after" >&2
+		exit 1
+	}
+fi
+if [[ "$old_tag" != "v0.8.1" ]]; then
+	"$binary" watch stop --timeout 10s >/dev/null
+fi
 bash "$(dirname "${BASH_SOURCE[0]}")/uninstall.sh" >/dev/null
 [[ ! -e "$binary" && -f "$data_dir/token-logger.db" && -f "$data_dir/settings.json" ]] || {
 	echo 'uninstall failed to remove the binary or preserve local data' >&2

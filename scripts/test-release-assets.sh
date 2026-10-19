@@ -8,7 +8,7 @@ trap 'rm -rf "$tmp"' EXIT
 touch "$tmp/SHA256SUMS" "$tmp/SHA256SUMS.sig" "$tmp/SHA256SUMS.pem"
 for target in linux_amd64 linux_arm64 darwin_amd64 darwin_arm64 windows_amd64 windows_arm64; do
 	if [[ "$target" == windows_* ]]; then suffix=zip; else suffix=tar.gz; fi
-	archive="$tmp/komposyn-lg_0.7.1_${target}.${suffix}"
+	archive="$tmp/komposyn-lg_0.8.1_${target}.${suffix}"
 	touch "$archive" "$archive.sig" "$archive.pem"
 done
 mkdir -p "$tmp/third_party_licenses"
