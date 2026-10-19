@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.1](https://github.com/ayeshLK/komposyn-lg/compare/v0.8.0...v0.8.1) (2026-10-19)
+
+
+### Performance Improvements
+
+* integrate core v0.7.1 and report [#138](https://github.com/ayeshLK/komposyn-lg/issues/138) CLI measurements ([95d89a1](https://github.com/ayeshLK/komposyn-lg/commit/95d89a15c63660114b4468a3ab22cb1df41eed81))
+* validate core v0.7.1 CLI integration ([5e159db](https://github.com/ayeshLK/komposyn-lg/commit/5e159dbc096695e9ed8bc5e255cd27d9055325f2))
+
 ## [0.8.0](https://github.com/ayeshLK/komposyn-lg/compare/v0.7.0...v0.8.0) (2026-10-18)
 
 
