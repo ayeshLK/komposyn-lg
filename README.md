@@ -21,7 +21,8 @@ background collector—all from your terminal.
 - **Understand your usage.** Filter and group token, cost, and session reports.
   Export exact values as JSON or CSV for your own tools.
 - **Keep collecting.** Register source directories and run a managed background
-  collector, or watch sources in the foreground.
+  collector, or watch sources in the foreground. Supported append-only updates
+  reuse durable checkpoints after the collector validates source history.
 - **Stay in the terminal.** Open the interactive interface for onboarding,
   reports, and collector settings, or use individual commands in scripts.
 - **Keep data local.** Provider files are read-only. KompoSyn stores usage metadata
