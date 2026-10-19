@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="600" viewBox="0 0 960 600" role="img" aria-labelledby="title desc">
+  <title id="title">komposyn-lg interactive REPL preview</title>
+  <desc id="desc">Illustrative terminal preview showing a compact startup banner, report range, usage table, concise collector notice, and read-only status details.</desc>
+  <rect width="960" height="600" rx="14" fill="#111827"/>
+  <rect width="960" height="42" rx="14" fill="#1f2937"/>
+  <circle cx="24" cy="21" r="6" fill="#f87171"/><circle cx="46" cy="21" r="6" fill="#fbbf24"/><circle cx="68" cy="21" r="6" fill="#34d399"/>
+  <text x="480" y="27" text-anchor="middle" fill="#cbd5e1" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13">komposyn-lg · interactive</text>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17">
+    <text x="32" y="84" fill="#f9fafb" font-weight="700">komposyn-lg interactive</text>
+    <text x="32" y="111" fill="#9ca3af">/help commands · /status details · /quit exit</text>
+    <text x="32" y="156" fill="#e5e7eb" font-weight="700">komposyn</text>
+    <text x="32" y="183" fill="#93c5fd">Range: last 7 days · UTC · rolling</text>
+    <line x1="32" y1="205" x2="928" y2="205" stroke="#374151"/>
+    <text x="32" y="240" fill="#9ca3af" font-size="14">CLIENT</text>
+    <text x="330" y="240" fill="#9ca3af" font-size="14">REQUESTS</text>
+    <text x="530" y="240" fill="#9ca3af" font-size="14">TOKENS</text>
+    <text x="735" y="240" fill="#9ca3af" font-size="14">COST</text>
+    <line x1="32" y1="251" x2="928" y2="251" stroke="#374151"/>
+    <text x="32" y="284" fill="#f9fafb">codex-cli</text>
+    <text x="330" y="284" fill="#f9fafb">—</text>
+    <text x="530" y="284" fill="#f9fafb">—</text>
+    <text x="735" y="284" fill="#f9fafb">—</text>
+    <text x="32" y="330" fill="#fbbf24">Collector: stopped; /status for details.</text>
+    <text x="32" y="383" fill="#9ca3af">komposyn &gt; /status</text>
+    <text x="32" y="424" fill="#f9fafb" font-weight="700">Last report query</text>
+    <text x="32" y="454" fill="#d1d5db">scope: usage · mode: rolling</text>
+    <text x="32" y="481" fill="#d1d5db">report range: [from, to) UTC (fractional seconds preserved)</text>
+    <text x="32" y="508" fill="#d1d5db">report queried_at: exact UTC query time</text>
+    <text x="32" y="555" fill="#6b7280" font-size="13">Illustrative layout; values shown as placeholders.</text>
+  </g>
+</svg>

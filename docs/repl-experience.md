@@ -41,6 +41,8 @@ hierarchy across terminals, narrow windows, and piped interactive input.
 
 ## Resulting layout
 
+![Illustrative terminal preview of the compact report and status layout](images/repl-preview.svg)
+
 ```text
 komposyn-lg interactive
 /help commands · /status details · /quit exit
