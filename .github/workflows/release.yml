@@ -337,19 +337,42 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        historical_tag: [v0.6.0, v0.8.1]
         include:
-          - os: ubuntu-24.04
+          - historical_tag: v0.6.0
+            os: ubuntu-24.04
             target: linux_amd64
-          - os: ubuntu-24.04-arm
+          - historical_tag: v0.6.0
+            os: ubuntu-24.04-arm
             target: linux_arm64
-          - os: macos-15-intel
+          - historical_tag: v0.6.0
+            os: macos-15-intel
             target: darwin_amd64
-          - os: macos-latest
+          - historical_tag: v0.6.0
+            os: macos-latest
             target: darwin_arm64
-          - os: windows-latest
+          - historical_tag: v0.6.0
+            os: windows-latest
             target: windows_amd64
-          - os: windows-11-arm
+          - historical_tag: v0.6.0
+            os: windows-11-arm
+            target: windows_arm64
+          - historical_tag: v0.8.1
+            os: ubuntu-24.04
+            target: linux_amd64
+          - historical_tag: v0.8.1
+            os: ubuntu-24.04-arm
+            target: linux_arm64
+          - historical_tag: v0.8.1
+            os: macos-15-intel
+            target: darwin_amd64
+          - historical_tag: v0.8.1
+            os: macos-latest
+            target: darwin_arm64
+          - historical_tag: v0.8.1
+            os: windows-latest
+            target: windows_amd64
+          - historical_tag: v0.8.1
+            os: windows-11-arm
             target: windows_arm64
     steps:
       - name: Check out tested source
