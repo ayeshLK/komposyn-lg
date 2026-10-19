@@ -188,13 +188,14 @@ restart, dynamic roots, lease/heartbeat, and cooperative stop behavior. The
 native Linux candidate verifier exercised fresh data, same-schema upgrade
 preservation, and newer-schema refusal without database mutation or a spurious
 backup. Since v0.7.0 to v0.7.1 does not advance the schema, that local run did
-not exercise migration-backup creation and restoration. Pull-request CI also
-builds candidate archives and runs published historical upgrade fixtures,
-including the schema-advancing v0.6.0 fixture, on six native targets; those PR
-checks must pass before review is complete. These checks do not substitute for
-the signed six-target artifact and signed-candidate upgrade evidence required
-by a future standalone release. No release was published, no tag was created
-or moved, and issues #23 and #20 remain open.
+not exercise migration-backup creation and restoration. PR #27's CI passed all
+checks, including candidate builds and published historical upgrade fixtures
+on six native targets, with the schema-advancing v0.6.0 fixture included
+([workflow run](https://github.com/ayeshLK/komposyn-lg/actions/runs/39198383857)).
+Those checks use unsigned candidate archives and do not substitute for the
+signed six-target artifact and signed-candidate upgrade evidence required by a
+future standalone release. No release was published, no tag was created or
+moved, and issues #23 and #20 remain open.
 
 ## Recommendation
 
