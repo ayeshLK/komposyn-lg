@@ -22,6 +22,7 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/chzyer/readline"
@@ -136,6 +137,15 @@ func TestWindowsConsoleKeyReaderRequiresCtrlEnterToSubmit(t *testing.T) {
 	plainEnter, ok := windowsConsoleRecordRune(windowsTestKeyRecord(windows.VK_RETURN, '\r', 0), false)
 	if !ok || plainEnter != readline.CharEnter {
 		t.Fatalf("plain Enter in a prompt = %d, %v; want submit rune %d", plainEnter, ok, readline.CharEnter)
+	}
+}
+
+func TestWindowsInteractiveInputHintExplainsCommandSubmission(t *testing.T) {
+	hint := interactiveInputHint()
+	for _, expected := range []string{"Ctrl+Enter submits commands", "plain Enter inserts a space", "Prompt defaults still accept Enter"} {
+		if !strings.Contains(hint, expected) {
+			t.Errorf("Windows input hint %q does not contain %q", hint, expected)
+		}
 	}
 }
 

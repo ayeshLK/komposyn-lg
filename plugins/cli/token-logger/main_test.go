@@ -674,11 +674,11 @@ func TestInteractiveCollectorDoesNotDuplicateBackgroundLease(t *testing.T) {
 	settings := defaultSettings(dataDir)
 	settings.OnboardingComplete, settings.CollectorEnabled, settings.AutoStart = true, true, true
 	var stdout, stderr bytes.Buffer
-	code := runInteractiveScanner(bufio.NewScanner(strings.NewReader("/quit\n")), &stdout, &stderr, store, dataDir, settings, false)
+	code := runInteractiveScanner(bufio.NewScanner(strings.NewReader("/status\n/quit\n")), &stdout, &stderr, store, dataDir, settings, false)
 	if code != 0 {
 		t.Fatalf("interactive code=%d stderr=%q", code, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "background collector already active") || !strings.Contains(stdout.String(), "mode=background") {
+	if !strings.Contains(stdout.String(), "reusing the collector already active") || !strings.Contains(stdout.String(), "mode=background") {
 		t.Fatalf("interactive output did not reuse background status: %q", stdout.String())
 	}
 	status, err := store.CollectorRuntimeStatus(time.Minute)
@@ -2289,7 +2289,7 @@ func TestClaudePricingAcceptanceAcrossCLIReportsAndREPL(t *testing.T) {
 			break
 		}
 		start := offset + nextHeader
-		nextReport := strings.Index(output[start:], "report queried_at:")
+		nextReport := strings.Index(output[start:], "\nkomposyn")
 		if nextReport < 0 {
 			t.Fatalf("pricing output has no following view boundary: %s", output[start:])
 		}
@@ -2412,7 +2412,7 @@ func TestOpenAIPricingAcceptanceThroughHarnessAndCLI(t *testing.T) {
 func TestInteractiveMode(t *testing.T) {
 	t.Setenv("TOKEN_LOGGER_DATA_DIR", t.TempDir())
 	var stdout, stderr bytes.Buffer
-	code := runWithInput(nil, strings.NewReader("n\nn\n/help\n/range 2026-10-11 2026-10-12\n/quit\n"), &stdout, &stderr)
+	code := runWithInput(nil, strings.NewReader("n\nn\n/help\n/range 2026-10-11 2026-10-12\n/status\n/quit\n"), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("interactive exit code = %d, stderr = %q", code, stderr.String())
 	}
@@ -2444,7 +2444,7 @@ func TestInteractiveRollingRangeRefreshSeesCommittedEventFromSecondStore(t *test
 	t1 := time.Date(2026, 10, 14, 10, 0, 0, 0, time.UTC)
 	current := t1
 	reader := &beforeReadLineReader{
-		scannerLineReader: &scannerLineReader{scanner: bufio.NewScanner(strings.NewReader("/refresh\n/quit\n")), output: io.Discard},
+		scannerLineReader: &scannerLineReader{scanner: bufio.NewScanner(strings.NewReader("/status\n/refresh\n/status\n/quit\n")), output: io.Discard},
 		before: func(command string) {
 			if command != "/refresh" {
 				return
@@ -2489,12 +2489,15 @@ func TestInteractiveRollingRangeDisplaysFractionalUpperBoundaryExactly(t *testin
 	}
 
 	var stdout, stderr bytes.Buffer
-	if code := runInteractiveLoopWithClock(&scannerLineReader{scanner: bufio.NewScanner(strings.NewReader("/quit\n")), output: io.Discard}, &stdout, &stderr, store, dataDir, defaultSettings(dataDir), false, func() time.Time { return to }); code != 0 {
+	if code := runInteractiveLoopWithClock(&scannerLineReader{scanner: bufio.NewScanner(strings.NewReader("/status\n/quit\n")), output: io.Discard}, &stdout, &stderr, store, dataDir, defaultSettings(dataDir), false, func() time.Time { return to }); code != 0 {
 		t.Fatalf("interactive exit code = %d, stderr = %q", code, stderr.String())
 	}
 	wantRange := "range: 2026-10-07T10:00:00.5Z to 2026-10-14T10:00:00.5Z (UTC)"
 	if !strings.Contains(stdout.String(), wantRange) {
 		t.Fatalf("rendered range lost fractional precision: want %q in %q", wantRange, stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "report range: 2026-10-07T10:00:00.5Z to 2026-10-14T10:00:00.5Z (UTC)") {
+		t.Fatalf("/status lost fractional query-bound precision: %q", stdout.String())
 	}
 	if !strings.Contains(stdout.String(), "inside-upper") || strings.Contains(stdout.String(), "at-upper") {
 		t.Fatalf("report did not honor the exact displayed half-open range: %q", stdout.String())
@@ -2514,9 +2517,10 @@ func TestInteractiveReportCommandsResolveFreshRollingRanges(t *testing.T) {
 	base := time.Date(2026, 10, 14, 10, 0, 0, 0, time.UTC)
 	current := base
 	var lines strings.Builder
+	lines.WriteString("/status\n")
 	for _, command := range commands {
 		lines.WriteString(command)
-		lines.WriteByte('\n')
+		lines.WriteString("\n/status\n")
 	}
 	reader := &beforeReadLineReader{
 		scannerLineReader: &scannerLineReader{scanner: bufio.NewScanner(strings.NewReader(lines.String())), output: io.Discard},
@@ -2574,7 +2578,7 @@ func TestInteractivePinnedRangeAndResetUseHalfOpenBounds(t *testing.T) {
 
 	base := time.Date(2026, 10, 14, 10, 0, 0, 0, time.UTC)
 	current := base
-	commands := "/range 2026-10-01 2026-10-02\n/projects\n/range\n/range reset\n/by-model\n/range\n/quit\n"
+	commands := "/range 2026-10-01 2026-10-02\n/status\n/projects\n/status\n/range\n/range reset\n/status\n/by-model\n/status\n/range\n/quit\n"
 	reader := &beforeReadLineReader{
 		scannerLineReader: &scannerLineReader{scanner: bufio.NewScanner(strings.NewReader(commands)), output: io.Discard},
 		before: func(command string) {
