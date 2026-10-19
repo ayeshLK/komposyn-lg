@@ -166,7 +166,7 @@ if kill -0 "$old_pid" 2>/dev/null; then
 	exit 1
 fi
 new_version="$($binary version)"
-[[ "$new_version" == *"komposyn-lg $candidate_version (core 0.7.0)"* ]] || {
+[[ "$new_version" == *"komposyn-lg $candidate_version (core 0.7.1)"* ]] || {
 	echo "candidate did not replace the historical executable: $new_version" >&2
 	exit 1
 }
