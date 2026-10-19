@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.2](https://github.com/ayeshLK/komposyn-lg/compare/v0.8.1...v0.8.2) (2026-10-19)
+
+
+### Performance Improvements
+
+* document checkpointed append collection ([1fb95d6](https://github.com/ayeshLK/komposyn-lg/commit/1fb95d61e074d17496eb15f93162f44d56db82b9))
+* document checkpointed append collection ([5350ef2](https://github.com/ayeshLK/komposyn-lg/commit/5350ef2297583e0d425b37fed3aab898b911c94f))
+
 ## [0.8.1](https://github.com/ayeshLK/komposyn-lg/compare/v0.8.0...v0.8.1) (2026-10-19)
 
 
