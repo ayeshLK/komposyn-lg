@@ -37,22 +37,26 @@ The published module download resolves `v0.7.1` from
 checksum `h1:a6E0yyAmAaRmrWhLW+IOzWu5bA/2raYqVsrNn+vXtaE=` and go.mod checksum
 `h1:Qgzn20ktpGuwlEOsGCn3wGBjqQ2AZ3Rxa6LgZDn7wxI=`.
 
-The core worktrees and CLI copies were disposable. Reproduction uses the
-committed measurement driver and temporary local module replacements:
+The core worktrees and CLI copies were disposable. The harness is checked out
+separately at the recorded commit and checksum, then passed to both CLI binaries.
+This keeps its exact-usage drain fix independent of the older CLI source tree.
+Reproduction uses temporary local module replacements:
 
 ```sh
 git -C /path/to/komposyn worktree add --detach /tmp/core-before 36fea986b18d2c5ad32f4876b50412a03f9d933f
 git -C /path/to/komposyn worktree add --detach /tmp/core-v071 4519551527b28461b250bfdbc7f9f66473a6a219
 git -C /path/to/komposyn-lg worktree add --detach /tmp/cli-before 265bcd375cbd626232998ec9a3e3793ec09492f9
 git -C /path/to/komposyn-lg worktree add --detach /tmp/cli-candidate 265bcd375cbd626232998ec9a3e3793ec09492f9
+git -C /path/to/komposyn-lg show 4f009bef1d3973baf404c7fa1cc5cece6451b8d3:scripts/measure-collector.py > /tmp/measure-collector.py
+echo 'e2a53f22d9cd21c11d538bcaa3c2eca159a3488a99de5a68e487e90b42930904  /tmp/measure-collector.py' | sha256sum --check
 go -C /tmp/cli-before mod edit -replace=github.com/ayeshLK/komposyn=/tmp/core-before
 go -C /tmp/cli-candidate mod edit -replace=github.com/ayeshLK/komposyn=/tmp/core-v071
 go -C /tmp/cli-before list -m -f '{{.Replace.Dir}}' github.com/ayeshLK/komposyn
 go -C /tmp/cli-candidate list -m -f '{{.Replace.Dir}}' github.com/ayeshLK/komposyn
 CGO_ENABLED=0 go -C /tmp/cli-before build -trimpath -ldflags '-s -w -X github.com/ayeshLK/komposyn/plugins/library/token-logger.Version=0.7.0 -X main.cliVersion=0.8.0' -o /tmp/komposyn-lg-before ./plugins/cli/token-logger
 CGO_ENABLED=0 go -C /tmp/cli-candidate build -trimpath -ldflags '-s -w -X github.com/ayeshLK/komposyn/plugins/library/token-logger.Version=0.7.1 -X main.cliVersion=0.8.0' -o /tmp/komposyn-lg-candidate ./plugins/cli/token-logger
-python3 /tmp/cli-before/scripts/measure-collector.py --binary /tmp/komposyn-lg-before --mode foreground --scenario unchanged --profile claude --interval 5s --events 10000 --warmup 15s --duration 120s --artifacts /tmp/measure-before
-python3 /tmp/cli-candidate/scripts/measure-collector.py --binary /tmp/komposyn-lg-candidate --mode foreground --scenario unchanged --profile claude --interval 5s --events 10000 --warmup 15s --duration 120s --artifacts /tmp/measure-candidate
+python3 /tmp/measure-collector.py --binary /tmp/komposyn-lg-before --mode foreground --scenario unchanged --profile claude --interval 5s --events 10000 --warmup 15s --duration 120s --artifacts /tmp/measure-before
+python3 /tmp/measure-collector.py --binary /tmp/komposyn-lg-candidate --mode foreground --scenario unchanged --profile claude --interval 5s --events 10000 --warmup 15s --duration 120s --artifacts /tmp/measure-candidate
 ```
 
 The complete matrix adds Codex; cold backfill with four files and no warmup;

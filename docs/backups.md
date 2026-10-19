@@ -16,4 +16,4 @@ separate working data directory and run a CLI version that supports its schema.
 Do not point an older CLI at the upgraded database.
 
 The core library documents its migration backup format and APIs in the
-[v0.7.1 core backup guide](https://github.com/ayeshLK/komposyn/blob/v0.7.1/docs/backups.md).
+[v0.7.1 core backup guide](https://github.com/ayeshLK/komposyn/blob/v0.7.1/docs/migration-backups.md).
