@@ -116,6 +116,8 @@ db.commit()
     if ($newStatus.pid -eq $oldPid -or $newStatus.instance_id -eq $oldInstance) { throw 'collector did not restart under a new process and lease identity' }
     if (Get-Process -Id $oldPid -ErrorAction SilentlyContinue) { throw 'historical collector process survived cooperative stop' }
     Get-Process -Id $newStatus.pid -ErrorAction Stop | Out-Null
+    $versionOutput = (& $binary version | Out-String).Trim()
+    if ($versionOutput -notmatch "komposyn-lg $candidateVersion \(core 0\.7\.1\)") { throw "candidate reports unexpected CLI/core versions: $versionOutput" }
     $nativeMetadata = (& go version -m $binary | Out-String)
     $expectedGoArch = if ($target -eq 'windows_arm64') { 'arm64' } else { 'amd64' }
     if ($nativeMetadata -notmatch "GOOS=windows" -or $nativeMetadata -notmatch "GOARCH=$expectedGoArch") { throw "installed candidate architecture differs from native target $target`n$nativeMetadata" }

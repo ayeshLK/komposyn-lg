@@ -5,7 +5,7 @@ go 1.26.0
 toolchain go1.26.9
 
 require (
-	github.com/ayeshLK/komposyn v0.7.0
+	github.com/ayeshLK/komposyn v0.7.1
 	github.com/chzyer/readline v1.5.1
 	github.com/creack/pty/v2 v2.0.1
 	github.com/mattn/go-isatty v0.0.24

@@ -1,12 +1,13 @@
 # Core compatibility and coordinated security releases
 
 The CLI is independently versioned and pins a specific core module in `go.mod`.
-At the v0.8.0 standalone release:
+At the initial v0.8.0 standalone release, both values below were `v0.7.0`; the
+next release candidate raises the floor and pin together:
 
-| Compatibility value | Core version |
-| --- | --- |
-| Minimum supported core | `v0.7.0` |
-| Currently pinned core | `v0.7.0` |
+| Compatibility value | Initial v0.8.0 release | Next release candidate |
+| --- | --- | --- |
+| Minimum supported core | `v0.7.0` | `v0.7.1` |
+| Pinned core | `v0.7.0` | `v0.7.1` |
 
 The standalone security support policy is latest-published-release only. At
 the time of this policy, `v0.8.0` is supported; a newer published CLI release
@@ -37,11 +38,11 @@ Dependabot may propose core dependency updates. Review each update for:
    and native lifecycle checks appropriate to the change. Core CI's candidate
    compatibility job must pass before the core change merges.
 
-The CLI CI tests the pinned core version. At present this is also the minimum
-supported version (`v0.7.0`). If the minimum and pin diverge, add explicit CLI
-CI coverage for both before documenting the expanded support range. Never
-commit a `replace` directive; the candidate override exists only in disposable
-CI storage.
+The CLI CI tests the pinned core version. The minimum supported version and
+pin are both `v0.7.1`; if they diverge later, add explicit CLI CI coverage for
+both before documenting the expanded support range. Never commit a `replace`
+directive; candidate overrides exist only in disposable CI or measurement
+worktrees.
 
 ## Coordinated private security releases
 

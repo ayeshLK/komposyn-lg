@@ -3,10 +3,12 @@
 Release Please prepares the standalone CLI version and changelog in a reviewed
 pull request. CLI and core versions advance independently: the release builder
 uses the requested CLI tag for `cli_version` and the exact pinned core module
-version for core `plugin_version`. The first standalone release is CLI `v0.8.0`,
-pinned to `github.com/ayeshLK/komposyn v0.7.0`. The minimum supported core
-version and current dependency pin are both `v0.7.0`; normal CLI CI tests that
-version once instead of adding a redundant second job. See
+version for core `plugin_version`. The first standalone release was CLI `v0.8.0`,
+pinned to `github.com/ayeshLK/komposyn v0.7.0`. The next release candidate
+pins the core to `github.com/ayeshLK/komposyn v0.7.1`. The minimum supported core
+version and current dependency pin for the next release candidate are both
+`v0.7.1`; normal CLI CI tests that version once instead of adding a redundant
+second job. See
 [core compatibility and coordinated security releases](core-compatibility-security.md).
 
 ## Publishing
@@ -40,7 +42,7 @@ go mod verify
 go vet ./...
 go test ./...
 go test -race ./...
-make release VERSION=v0.7.1 OUTPUT_DIR=/tmp/komposyn-lg-release-test
+make release VERSION=v0.8.1 OUTPUT_DIR=/tmp/komposyn-lg-release-test
 bash scripts/verify-release.sh /tmp/komposyn-lg-release-test
 ```
 

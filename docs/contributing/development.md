@@ -5,7 +5,7 @@
 Install Go 1.26.9 or newer and work from a feature branch. This module is
 `github.com/ayeshLK/komposyn-lg`; the CLI source remains under
 `plugins/cli/token-logger` to preserve the extracted layout. The module requires
-`github.com/ayeshLK/komposyn v0.7.0` or newer and must not use a permanent
+`github.com/ayeshLK/komposyn v0.7.1` or newer and must not use a permanent
 `replace` directive.
 
 Keep local build output in the ignored `bin/` directory. Use a fresh temporary

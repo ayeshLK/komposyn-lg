@@ -236,7 +236,7 @@ jobs:
         env:
           EXPECTED_TARGET: ${{ matrix.target }}
           EXPECTED_VERSION: ${{ needs.prepare.outputs.version }}
-          EXPECTED_CORE_VERSION: 0.7.0
+          EXPECTED_CORE_VERSION: 0.7.1
         shell: bash
         run: bash scripts/verify-signed-runtime.sh dist "$EXPECTED_TARGET" "$EXPECTED_VERSION" "$EXPECTED_CORE_VERSION"
 
@@ -533,7 +533,7 @@ jobs:
           for archive in "${archives[@]}"; do
             cosign verify-blob --signature "${archive}.sig" --certificate "${archive}.pem" --certificate-identity-regexp "$identity" --certificate-oidc-issuer "$issuer" "$archive"
           done
-          bash scripts/verify-signed-runtime.sh published linux_amd64 "$RELEASE_VERSION" 0.7.0
+          bash scripts/verify-signed-runtime.sh published linux_amd64 "$RELEASE_VERSION" 0.7.1
           bash scripts/verify-release.sh published
 
       - name: Remove completed release marker

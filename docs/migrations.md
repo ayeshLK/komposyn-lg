@@ -11,4 +11,4 @@ preserve the original files and use the recovery procedure in
 reuse an upgraded database with an older binary.
 
 For migration history, implementation details, and supported rollback evidence,
-see the [v0.7.0 core migration guide](https://github.com/ayeshLK/komposyn/blob/v0.7.0/docs/migrations.md).
+see the [v0.7.1 core migration guide](https://github.com/ayeshLK/komposyn/blob/v0.7.1/docs/migrations.md).
