@@ -234,11 +234,13 @@ komposyn-lg settings --data-dir /path/to/data --collector on --auto-start off
 ```
 
 Running `komposyn-lg` without a subcommand opens interactive mode. The first
-run asks whether to enable the local collector. Every later launch explains
-whether collection starts for this REPL session from that saved preference or
-remains off. The initial scan is asynchronous, and collector health/freshness
-is shown at safe prompt boundaries and by `/settings`. In a terminal, the prompt
-supports Left/Right, Backspace, Delete, Home/End, and Up/Down session history.
+run asks whether to enable the local collector. The banner points to `/help`
+and `/status`. A compact collector notice appears at safe prompt boundaries
+when its meaning changes, including pending data and recorded failures.
+`/status` shows the startup decision, versions, data directory, saved
+preferences, and detailed runtime state. The initial scan is asynchronous.
+In a terminal, the prompt supports Left/Right, Backspace, Delete, Home/End, and
+Up/Down session history.
 History is held in memory for this invocation only: it contains non-empty REPL
 commands, excludes onboarding and diagnostic answers, and is never written to
 disk. Ctrl-D on an empty prompt exits. Ctrl-C cancels the current input and
@@ -275,7 +277,7 @@ changes the rolling or pinned range. Models are computed from session events
 using resolved model with the existing requested-model fallback.
 
 Interactive reports also support `/total-usage`, `/by-client`, `/by-model`,
-`/cost`, `/pricing`, `/range`, `/refresh`, `/clear`, `/settings`,
+`/cost`, `/pricing`, `/range`, `/refresh`, `/clear`, `/status`, `/settings`,
 `/report-issue`, and `/quit`. `/pricing` displays the bounded provider/model
 breakdown and reason-specific guidance for the active scope and date range.
 It reads committed database data and leaves navigation and collection state
@@ -293,9 +295,10 @@ continue to accept plain Enter for the displayed default.
 
 Interactive reports use a rolling last-seven-calendar-days range in UTC by
 default. The range is recalculated immediately before each report render, and
-the output shows the exact half-open bounds and database query time. Source
-scan completion is reported separately. `/refresh` and
-each report-view command therefore include newly committed usage on the next
+the output shows a compact UTC range above the table. `/status` shows the last
+report query's exact half-open bounds and database query time without advancing
+the range or rerunning the query. Source scan completion is reported separately.
+`/refresh` and each report-view command therefore include newly committed usage on the next
 command-driven render; `/refresh` does not initiate or await collection, and
 the terminal does not update passively while idle.
 `/range` displays whether the mode is `rolling` or `pinned` and its effective

@@ -149,6 +149,7 @@ func runWithInput(args []string, input io.Reader, stdout, stderr io.Writer) int 
 }
 
 type interactiveState struct {
+	reportSnapshot  *interactiveReportSnapshot
 	from            time.Time
 	to              time.Time
 	pinned          bool
@@ -252,11 +253,7 @@ func collectorStatusLine(collector *tokenlogger.Collector) string {
 }
 
 func persistedCollectorStatusLine(store *tokenlogger.Store) string {
-	status, err := store.CollectorRuntimeStatus(0)
-	if err != nil {
-		return "collector runtime: state=unknown"
-	}
-	status, err = store.CollectorRuntimeStatus(staleWindow(status.Interval))
+	status, err := interactiveRuntimeStatus(store)
 	if err != nil {
 		return "collector runtime: state=unknown"
 	}
@@ -550,25 +547,27 @@ func runInteractiveLoop(reader interactiveLineReader, stdout, stderr io.Writer, 
 func runInteractiveLoopWithClock(reader interactiveLineReader, stdout, stderr io.Writer, store *tokenlogger.Store, dataDir string, settings appSettings, startNow bool, now func() time.Time) int {
 	state := interactiveState{groupBy: []string{tokenlogger.GroupClient, tokenlogger.GroupProvider, tokenlogger.GroupModel}}
 	var collectorRuntime *interactiveCollectorRuntime
+	collectorSession := "session-owned collector off: collection preference is disabled"
 	if startNow || (settings.CollectorEnabled && settings.AutoStart) {
 		var err error
 		collectorRuntime, err = startInteractiveCollector(store, defaultCollectorRoots(), settings.collectorPollInterval())
 		if errors.Is(err, tokenlogger.ErrCollectorActive) {
-			fmt.Fprintln(stdout, "background collector already active for this data directory; this REPL will reuse its persisted status")
+			collectorSession = "reusing the collector already active for this data directory"
 		} else if err != nil {
+			collectorSession = "collector setup failed; see the error above"
 			fmt.Fprintf(stderr, "collector setup failed: %v\n", err)
 		} else {
 			defer collectorRuntime.stop()
-			fmt.Fprintf(stdout, "local collector starting for this REPL session (%s)\n", map[bool]string{true: "requested during onboarding", false: "saved auto-start preference"}[startNow])
+			collectorSession = "session-owned collector started from saved auto-start preference"
+			if startNow {
+				collectorSession = "session-owned collector started as requested during onboarding"
+			}
 		}
 	} else if settings.CollectorEnabled {
-		fmt.Fprintln(stdout, "local collector off for this session: enabled preference saved, auto-start on REPL launch is off")
-	} else {
-		fmt.Fprintln(stdout, "local collector off for this session: collection is disabled")
+		collectorSession = "session-owned collector off: auto-start on REPL launch is disabled"
 	}
-	fmt.Fprintf(stdout, "%s interactive\n", versionOutput())
-	fmt.Fprintf(stdout, "data directory: %s\n", dataDir)
-	fmt.Fprintln(stdout, "Type /help for commands; /quit to exit.")
+	fmt.Fprintln(stdout, "komposyn-lg interactive")
+	fmt.Fprintln(stdout, "/help commands · /status details · /quit exit")
 	if hint := interactiveInputHint(); hint != "" && reader.IsTerminal() {
 		fmt.Fprintln(stdout, hint)
 	}
@@ -586,7 +585,7 @@ func runInteractiveLoopWithClock(reader interactiveLineReader, stdout, stderr io
 	}
 	lastCollectorStatus := ""
 	for {
-		currentCollectorStatus := persistedCollectorStatusLine(store)
+		currentCollectorStatus := interactiveCollectorSummary(store)
 		if currentCollectorStatus != lastCollectorStatus {
 			fmt.Fprintln(stdout, currentCollectorStatus)
 			lastCollectorStatus = currentCollectorStatus
@@ -611,6 +610,12 @@ func runInteractiveLoopWithClock(reader interactiveLineReader, stdout, stderr io
 			return 0
 		case "/help":
 			printInteractiveHelp(stdout)
+		case "/status":
+			if selector != "" {
+				fmt.Fprintln(stdout, "usage: /status")
+				continue
+			}
+			printInteractiveStatus(stdout, store, &state, dataDir, settings, collectorSession)
 		case "/clear":
 			if terminalReader, ok := reader.(*terminalLineReader); ok {
 				if err := clearTerminal(terminalReader.instance.Stdout()); err != nil {
@@ -825,8 +830,7 @@ func (state *interactiveState) clearModelSelection() {
 
 func renderInteractive(stdout, stderr io.Writer, store *tokenlogger.Store, state *interactiveState, reader interactiveLineReader, now func() time.Time) error {
 	state.resolveRange(now)
-	fmt.Fprintf(stdout, "%s\n", interactiveBreadcrumb(state))
-	fmt.Fprintf(stdout, "report queried_at: %s (database snapshot; source scanning is separate)\n", now().UTC().Format(time.RFC3339Nano))
+	fmt.Fprintf(stdout, "\n%s\n", interactiveBreadcrumb(state))
 	resourceFilter := tokenlogger.ResourceFilter{From: state.from, To: state.to}
 	if state.view == "projects" {
 		list, err := store.ListProjects(resourceFilter)
@@ -835,7 +839,8 @@ func renderInteractive(stdout, stderr io.Writer, store *tokenlogger.Store, state
 		}
 		state.projectRows = append(state.projectRows[:0], list.Projects...)
 		state.sessionRows, state.modelRows = nil, nil
-		fmt.Fprintf(stdout, "range: %s to %s (UTC)\n", state.from.Format(time.RFC3339Nano), state.to.Format(time.RFC3339Nano))
+		state.recordReport(now().UTC())
+		writeInteractiveRange(stdout, state)
 		return writeProjectTable(stdout, list.Projects)
 	}
 	if state.view == "sessions" {
@@ -846,7 +851,8 @@ func renderInteractive(stdout, stderr io.Writer, store *tokenlogger.Store, state
 		state.sessionRows = append(state.sessionRows[:0], list.Sessions...)
 		state.projectRows, state.modelRows = nil, nil
 		writeInteractiveProjectHeader(stdout, state)
-		fmt.Fprintf(stdout, "range: %s to %s (UTC)\n", state.from.Format(time.RFC3339Nano), state.to.Format(time.RFC3339Nano))
+		state.recordReport(now().UTC())
+		writeInteractiveRange(stdout, state)
 		return writeSessionTable(stdout, list.Sessions)
 	}
 	state.projectRows, state.sessionRows = nil, nil
@@ -867,7 +873,8 @@ func renderInteractive(stdout, stderr io.Writer, store *tokenlogger.Store, state
 	if state.view == "project" {
 		writeInteractiveProjectHeader(stdout, state)
 	}
-	fmt.Fprintf(stdout, "range: %s to %s (UTC)\n", state.from.Format(time.RFC3339Nano), state.to.Format(time.RFC3339Nano))
+	state.recordReport(now().UTC())
+	writeInteractiveRange(stdout, state)
 	if state.view == "session" || state.view == "models" {
 		state.modelRows = make([]interactiveModelSelection, 0, len(report.Rows))
 		for _, row := range report.Rows {
@@ -1082,9 +1089,32 @@ func readerOutput(reader interactiveLineReader) io.Writer {
 }
 
 func printInteractiveHelp(stdout io.Writer) {
-	fmt.Fprintln(stdout, "/projects /project <selector> /sessions /session <selector> /models /model <selector>")
-	fmt.Fprintln(stdout, "/back /home /total-usage /by-client /by-model /cost /pricing")
-	fmt.Fprintln(stdout, "/range [<from> <to> | reset] /refresh /clear /settings /report-issue /help /quit")
+	fmt.Fprint(stdout, `
+Browse
+  /projects                  List projects
+  /project <selector>        Open a project by row, name, or stable ID
+  /sessions                  List sessions in the selected project
+  /session <selector>        Open a session by row or ID prefix
+  /models                    List models in the selected session
+  /model <selector>          Open a model by row or unambiguous name
+  /back /home                Move up one level or return home
+
+Reports
+  /total-usage /cost         Usage and cost for the active scope
+  /by-client /by-model       Change the report grouping
+  /pricing                   Explain pricing coverage for the active scope
+  /range [<from> <to> | reset] Inspect, pin, or reset the UTC range
+  /refresh                   Redraw saved database data (no source scan)
+
+Session
+  /status                    Versions, data directory, collector, last report query
+  /settings                  Saved preferences and current runtime information
+  /report-issue              Inspect pending local diagnostics
+  /clear                     Clear the visible terminal
+  /help                      Show these commands
+  /quit /exit                Exit
+
+`)
 }
 
 func printPendingDiagnostics(stdout io.Writer, store *tokenlogger.Store) {

@@ -56,12 +56,14 @@ events.
 
 ## Interactive totals look stale
 
-Read the `collector runtime` line at the next command prompt or run
-`/settings`. `state` is worker lifecycle; `health` describes the latest poll.
-Compare `last_completed` and `last_success`, then inspect `sources`,
-`discovery_failures`, `pending`, and the typed failure counts. A degraded poll
-does not erase the last successful time. Every report prints `queried_at`; that
-is the SQLite query time, not proof that provider sources were just scanned.
+Read the compact `Collector:` notice at the next command prompt, then run
+`/status` for details. Inspect `state`, `last_completed`, `sources`,
+`discovery_failures`, `pending`, and the typed failure counts. Counters accumulate
+for the collector run, so recorded failures may remain after recovery.
+`/status` also shows the last successful report query's exact bounds and
+`queried_at`; this is the SQLite query time, not proof that provider sources
+were just scanned. A running collector without a completed scan is still
+waiting for its first result.
 `/refresh` redraws committed database data only. Use foreground `watch` when an
 explicit source scan is needed, and ensure it uses the same data directory.
 

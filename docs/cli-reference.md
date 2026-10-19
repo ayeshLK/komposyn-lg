@@ -277,13 +277,20 @@ Runs the versioned JSONL sidecar protocol over stdin/stdout. See the
 
 Running `komposyn-lg` without a subcommand starts onboarding on first use and
 then opens the interactive report view. Type `/help` for the command list.
-Each launch states whether the session-owned collector is starting or off and
-why. A starting collector means the initial scan is in progress; it does not
-delay the first database report. At command boundaries, a changed collector
-status line shows lifecycle, latest health, source/discovery counts, last
-completed and successful scan times, pending tails, and sanitized failure
-categories. `/settings` labels persisted preferences separately from this
-runtime state.
+The startup banner points to `/help`, `/status`, and `/quit`. Reports separate
+navigation, a compact UTC range, and the usage table with whitespace. A short
+collector notice appears at the first prompt and when its meaning changes;
+ordinary polling timestamps and counter increments do not repeat it. Notices
+retain stopped, starting, stale/degraded, no-source, pending-data, and recorded
+failure states, so collection problems remain visible.
+
+`/status` is read-only and accepts no arguments. It displays CLI/core versions,
+the data directory, the session's collector startup decision, saved preferences,
+persisted runtime lifecycle and counters, and exact bounds/query time for the
+last successful report query. These bounds describe that query, even if time
+has advanced or a later query failed. It does not resolve a new rolling range,
+refresh a report, scan sources, or change navigation or consent. `/settings`
+remains available for saved preferences and current runtime information.
 
 When both stdin and stdout are terminals, the prompt provides cursor-aware
 editing with Left/Right, Backspace, Delete, Home/End, and Up/Down session
@@ -306,9 +313,10 @@ batch.
 Interactive reports start in rolling mode. Immediately before each report
 render—including `/refresh`, `/projects`, `/sessions`, `/total-usage`,
 `/by-client`, `/by-model`, and `/cost`—the CLI resolves the last seven UTC
-calendar days and prints the exact half-open range and `queried_at` time used by
-that database query. Source scanning is separate. New committed usage appears
-when the next report command is run; reports do not redraw passively while the
+calendar days. The default view labels the range as rolling; pinned ranges
+show their bounds. `/status` exposes the last report's exact half-open bounds
+and `queried_at` time, including fractional seconds. Source scanning is separate.
+New committed usage appears when the next report command is run; reports do not redraw passively while the
 prompt is idle. `/refresh` remains database redraw-only and neither starts nor
 waits for a source scan.
 
