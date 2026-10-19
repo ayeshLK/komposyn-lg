@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/ayeshLK/komposyn-lg/compare/v0.8.2...v0.9.0) (2026-10-19)
+
+
+### Features
+
+* improve interactive REPL clarity ([6189d35](https://github.com/ayeshLK/komposyn-lg/commit/6189d358c76b12b82833ecb96fb5520b86ee4f79))
+
 ## [0.8.2](https://github.com/ayeshLK/komposyn-lg/compare/v0.8.1...v0.8.2) (2026-10-19)
 
 
