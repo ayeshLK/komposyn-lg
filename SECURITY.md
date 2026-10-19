@@ -17,7 +17,7 @@ for new standalone artifacts.
 ## Supported versions
 
 Only the latest published standalone CLI release receives security fixes. As
-of this policy's adoption, that release is `v0.8.0`; when a newer CLI release
+of this policy's adoption, that release is `v0.8.1`; when a newer CLI release
 is published, older releases become unsupported. The `master` branch is the
 development source for future releases, not a separately supported install or
 release line. Security fixes for the supported release are developed on

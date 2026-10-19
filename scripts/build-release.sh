@@ -14,7 +14,7 @@ if [[ -z "$output_dir" || "$output_dir" == "/" || "$output_dir" == "." || -L "$o
 	echo "refusing unsafe release output directory: $output_dir" >&2
 	exit 1
 fi
-core_version="$(bash "$root_dir/scripts/resolve-core-version.sh" github.com/ayeshLK/komposyn v0.7.1)"
+core_version="$(bash "$root_dir/scripts/resolve-core-version.sh" github.com/ayeshLK/komposyn v0.8.0)"
 core_version="${core_version#v}"
 ldflags="-s -w -X github.com/ayeshLK/komposyn/plugins/library/token-logger.Version=${core_version} -X main.cliVersion=${version}"
 

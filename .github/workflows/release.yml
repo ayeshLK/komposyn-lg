@@ -236,7 +236,7 @@ jobs:
         env:
           EXPECTED_TARGET: ${{ matrix.target }}
           EXPECTED_VERSION: ${{ needs.prepare.outputs.version }}
-          EXPECTED_CORE_VERSION: 0.7.1
+          EXPECTED_CORE_VERSION: 0.8.0
         shell: bash
         run: bash scripts/verify-signed-runtime.sh dist "$EXPECTED_TARGET" "$EXPECTED_VERSION" "$EXPECTED_CORE_VERSION"
 
@@ -331,12 +331,13 @@ jobs:
           done
 
   verify-active-historical:
-    name: Verify signed cross-version active collector upgrade (${{ matrix.target }})
+    name: Verify signed ${{ matrix.historical_tag }} active collector upgrade (${{ matrix.target }})
     needs: [prepare, build-release]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        historical_tag: [v0.6.0, v0.8.1]
         include:
           - os: ubuntu-24.04
             target: linux_amd64
@@ -376,14 +377,14 @@ jobs:
         if: runner.os != 'Windows'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash scripts/verify-active-signed-candidate-upgrade.sh v0.6.0 dist
+        run: bash scripts/verify-active-signed-candidate-upgrade.sh "${{ matrix.historical_tag }}" dist
       - name: Verify active collector upgrade on native Windows
         if: runner.os == 'Windows'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
           EXPECTED_TARGET: ${{ matrix.target }}
-        run: ./scripts/verify-active-signed-candidate-upgrade.ps1 -OldTag v0.6.0 -CandidateDir dist
+        run: ./scripts/verify-active-signed-candidate-upgrade.ps1 -OldTag "${{ matrix.historical_tag }}" -CandidateDir dist
 
   publish:
     name: Publish GitHub release
@@ -533,7 +534,7 @@ jobs:
           for archive in "${archives[@]}"; do
             cosign verify-blob --signature "${archive}.sig" --certificate "${archive}.pem" --certificate-identity-regexp "$identity" --certificate-oidc-issuer "$issuer" "$archive"
           done
-          bash scripts/verify-signed-runtime.sh published linux_amd64 "$RELEASE_VERSION" 0.7.1
+          bash scripts/verify-signed-runtime.sh published linux_amd64 "$RELEASE_VERSION" 0.8.0
           bash scripts/verify-release.sh published
 
       - name: Remove completed release marker

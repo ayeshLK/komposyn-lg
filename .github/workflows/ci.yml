@@ -94,7 +94,7 @@ jobs:
           go-version-file: go.mod
           cache: true
       - name: Build candidate release
-        run: make release VERSION=v0.7.1 OUTPUT_DIR=dist
+        run: make release VERSION=v0.8.1 OUTPUT_DIR=dist
       - name: Upload candidate archives
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -142,7 +142,7 @@ jobs:
       - name: Install pinned Cosign natively on Windows ARM64
         if: matrix.target == 'windows_arm64'
         run: go install github.com/sigstore/cosign/v2/cmd/cosign@v2.4.3
-      - name: Verify upgrades from published v0.6.0 and v0.7.0
+      - name: Verify upgrades from published CLI v0.6.0, v0.7.0 and v0.8.1
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/verify-published-upgrades.sh dist "$RUNNER_TEMP/published-upgrades" "${{ matrix.target }}"

@@ -4,6 +4,8 @@ set -euo pipefail
 dist_dir="${1:?usage: verify-release.sh <release-dir> [verified-reference-binary] [expected-target]}"
 reference_binary="${2:-}"
 expected_target="${3:-}"
+expected_schema_transition="${4:-}"
+expected_candidate_schema=16
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 version="$(sed -n 's/^# version=//p' "$dist_dir/SHA256SUMS" | head -1)"
 if [[ -z "$version" ]]; then
@@ -65,7 +67,6 @@ case "$host_os:$host_arch" in
 esac
 
 tmp_dir="$(mktemp -d)"
-trap 'rm -rf "$tmp_dir"' EXIT
 if [[ "$windows_host" == true ]]; then
   archive_path="$(cygpath -w "$dist_dir/$asset")"
   extraction_path="$(cygpath -w "$tmp_dir")"
@@ -84,6 +85,17 @@ install_dir="$tmp_dir/bin"
 data_dir="$tmp_dir/data"
 mkdir -p "$install_dir" "$data_dir"
 binary_path="$install_dir/$binary_name"
+cleanup() {
+  if [[ -x "$binary_path" && -f "$data_dir/token-logger.db" ]]; then
+    cleanup_data_dir="$data_dir"
+    if [[ "$windows_host" == true ]]; then
+      cleanup_data_dir="$(cygpath -w "$data_dir")"
+    fi
+    TOKEN_LOGGER_DATA_DIR="$cleanup_data_dir" "$binary_path" watch stop --timeout 10s >/dev/null 2>&1 || true
+  fi
+  rm -rf "$tmp_dir"
+}
+trap cleanup EXIT
 run_cli() {
   local cli_data_dir="$data_dir"
   if [[ "$windows_host" == true ]]; then
@@ -144,6 +156,101 @@ EOF
     exit 1
   }
   reference_schema="$(database_schema_version "$data_dir/token-logger.db")"
+  if [[ -n "$expected_schema_transition" ]]; then
+    IFS=: read -r expected_reference_schema expected_target_schema <<<"$expected_schema_transition"
+    [[ "$reference_schema" == "$expected_reference_schema" && "$expected_target_schema" == "$expected_candidate_schema" ]] || {
+      echo "reference schema transition is $reference_schema -> $expected_candidate_schema; expected $expected_schema_transition" >&2
+      exit 1
+    }
+    failure_dir="$tmp_dir/migration-failure-data"
+    mkdir -p "$failure_dir"
+    failure_data_dir="$failure_dir"
+    if [[ "$windows_host" == true ]]; then
+      failure_data_dir="$(cygpath -w "$failure_dir")"
+    fi
+    cp "$data_dir/settings.json" "$failure_dir/settings.json"
+    python3 - "$data_dir/token-logger.db" "$failure_dir/token-logger.db" <<'PY'
+import sqlite3
+import sys
+
+source = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True)
+target = sqlite3.connect(sys.argv[2])
+try:
+    source.backup(target)
+    target.execute("CREATE TABLE parser_checkpoints (injected_conflict INTEGER)")
+    target.commit()
+finally:
+    target.close()
+    source.close()
+PY
+    failure_before="$(python3 - "$failure_dir/token-logger.db" <<'PY'
+import sqlite3
+import sys
+
+db = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True)
+try:
+    version = db.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
+    events = db.execute("SELECT COUNT(*) FROM usage_events").fetchone()[0]
+    projects = db.execute("SELECT COUNT(*) FROM projects").fetchone()[0]
+finally:
+    db.close()
+print(f"{version}:{events}:{projects}")
+PY
+)"
+    if TOKEN_LOGGER_DATA_DIR="$failure_data_dir" "$tmp_dir/$binary_name" usage --format json >"$tmp_dir/migration-failure.txt" 2>&1; then
+      echo "candidate unexpectedly migrated a schema-15 database with a conflicting checkpoint table" >&2
+      exit 1
+    fi
+    failure_after="$(python3 - "$failure_dir/token-logger.db" <<'PY'
+import sqlite3
+import sys
+
+db = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True)
+try:
+    integrity = db.execute("PRAGMA integrity_check").fetchone()[0]
+    version = db.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
+    events = db.execute("SELECT COUNT(*) FROM usage_events").fetchone()[0]
+    projects = db.execute("SELECT COUNT(*) FROM projects").fetchone()[0]
+finally:
+    db.close()
+if integrity != "ok":
+    raise SystemExit(f"migration failure left invalid SQLite data: {integrity}")
+print(f"{version}:{events}:{projects}")
+PY
+)"
+    [[ "$failure_after" == "$failure_before" ]] || {
+      echo "failed migration changed the original schema/data: before=$failure_before after=$failure_after" >&2
+      exit 1
+    }
+    failure_backup="$(find "$failure_dir" -maxdepth 1 -name '.komposyn-pre-migration-*.sqlite' -type f -print -quit)"
+    [[ -n "$failure_backup" ]] || { echo "failed schema migration did not preserve its verified backup" >&2; exit 1; }
+    python3 - "$failure_backup" <<'PY'
+import sqlite3
+import sys
+
+db = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True)
+try:
+    integrity = db.execute("PRAGMA integrity_check").fetchone()[0]
+    source, target = db.execute("SELECT source_schema, target_schema FROM komposyn_migration_backup").fetchone()
+    version = db.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
+finally:
+    db.close()
+if integrity != "ok" or (source, target, version) != (15, 16, 15):
+    raise SystemExit(f"failed-migration backup metadata/integrity mismatch: {integrity}, {source}->{target}, schema={version}")
+PY
+    recovery_dir="$tmp_dir/migration-failure-recovery"
+    mkdir -p "$recovery_dir"
+    cp "$failure_backup" "$recovery_dir/token-logger.db"
+    failure_recovery_data_dir="$recovery_dir"
+    if [[ "$windows_host" == true ]]; then
+      failure_recovery_data_dir="$(cygpath -w "$recovery_dir")"
+    fi
+    recovered="$(TOKEN_LOGGER_DATA_DIR="$failure_recovery_data_dir" "$reference_binary" usage --format json --from 1970-01-01T00:00:00Z)"
+    grep -Eq '"total_tokens"[[:space:]]*:[[:space:]]*123' <<<"$recovered" || {
+      echo "v0.8.1 could not read the preserved schema-15 backup after migration failure: $recovered" >&2
+      exit 1
+    }
+  fi
   # Preserve a user-reviewed diagnostic from the historical schema so the
   # upgrade fixture verifies that review decisions survive the real upgrade.
   python3 - "$data_dir/token-logger.db" <<'PY'
@@ -174,6 +281,13 @@ else
 fi
 [[ -e "$data_dir/settings.json" ]] || { echo "settings were not created" >&2; exit 1; }
 [[ -e "$data_dir/token-logger.db" ]] || { echo "database was not created" >&2; exit 1; }
+if [[ -z "$reference_binary" ]]; then
+  fresh_schema="$(database_schema_version "$data_dir/token-logger.db")"
+  [[ "$fresh_schema" == "$expected_candidate_schema" ]] || {
+    echo "fresh database schema is $fresh_schema; expected $expected_candidate_schema" >&2
+    exit 1
+  }
+fi
 settings_digest=""
 if [[ -n "$reference_binary" ]]; then
   settings_digest="$(file_sha256 "$data_dir/settings.json")"
@@ -196,6 +310,14 @@ if [[ -n "$reference_binary" ]]; then
     exit 1
   }
   upgraded_schema="$(database_schema_version "$data_dir/token-logger.db")"
+  [[ "$upgraded_schema" == "$expected_candidate_schema" ]] || {
+    echo "candidate database schema is $upgraded_schema; expected $expected_candidate_schema" >&2
+    exit 1
+  }
+  if [[ -n "$expected_schema_transition" && "$reference_schema:$upgraded_schema" != "$expected_schema_transition" ]]; then
+    echo "database schema transition was $reference_schema:$upgraded_schema; expected $expected_schema_transition" >&2
+    exit 1
+  fi
   if ((upgraded_schema < reference_schema)); then
     echo "upgrade lowered database schema from $reference_schema to $upgraded_schema" >&2
     exit 1
@@ -306,6 +428,95 @@ PY
       echo "compatible reference binary could not read the restored pre-migration backup" >&2
       exit 1
     }
+    if [[ "$expected_schema_transition" == "15:16" ]]; then
+      restored_schema="$(database_schema_version "$recovery_dir/token-logger.db")"
+      [[ "$restored_schema" == 15 ]] || { echo "restored backup schema is $restored_schema; expected 15" >&2; exit 1; }
+      # The shipped v0.8.1 binary must refuse the schema-16 database without
+      # changing the database or creating/removing SQLite sidecars.
+      refusal_before="$(python3 - "$data_dir/token-logger.db" <<'PY'
+import hashlib
+import pathlib
+import sys
+
+database = pathlib.Path(sys.argv[1])
+for suffix in ("", "-wal", "-shm"):
+    path = pathlib.Path(str(database) + suffix)
+    print(f"{suffix}:{hashlib.sha256(path.read_bytes()).hexdigest()}" if path.is_file() else f"{suffix}:missing")
+PY
+)"
+      refusal_data_dir="$data_dir"
+      if [[ "$windows_host" == true ]]; then
+        refusal_data_dir="$(cygpath -w "$data_dir")"
+      fi
+      if TOKEN_LOGGER_DATA_DIR="$refusal_data_dir" "$reference_binary" usage --format json >"$tmp_dir/old-schema-refusal.txt" 2>&1; then
+        echo "CLI v0.8.1 unexpectedly opened the schema-16 database" >&2
+        exit 1
+      fi
+      grep -Fq 'newer than supported version' "$tmp_dir/old-schema-refusal.txt" || {
+        echo "CLI v0.8.1 failed for an unexpected reason instead of refusing schema 16: $(cat "$tmp_dir/old-schema-refusal.txt")" >&2
+        exit 1
+      }
+      refusal_after="$(python3 - "$data_dir/token-logger.db" <<'PY'
+import hashlib
+import pathlib
+import sys
+
+database = pathlib.Path(sys.argv[1])
+for suffix in ("", "-wal", "-shm"):
+    path = pathlib.Path(str(database) + suffix)
+    print(f"{suffix}:{hashlib.sha256(path.read_bytes()).hexdigest()}" if path.is_file() else f"{suffix}:missing")
+PY
+)"
+      [[ "$refusal_after" == "$refusal_before" ]] || {
+        echo "CLI v0.8.1 refusal changed schema-16 database/sidecars: before=$refusal_before after=$refusal_after" >&2
+        exit 1
+      }
+      cat >>"$source_dir/codex.jsonl" <<'EOF'
+{"type":"event_msg","id":"checkpoint-bootstrap-event","timestamp":"2026-10-18T12:00:00Z","payload":{"type":"token_count","session_id":"cursor-session","project_id":"cursor-project","model":"gpt-test","info":{"total_token_usage":{"input_tokens":20,"output_tokens":5}}}}
+EOF
+      run_cli watch start --interval 1s >/dev/null
+      assert_checkpoint_totals() {
+        local expected_total="$1" expected_requests="$2" usage_json
+        for _ in {1..120}; do
+          usage_json="$(run_cli usage --format json --from 1970-01-01T00:00:00Z)"
+          if python3 - "$usage_json" "$expected_total" "$expected_requests" <<'PY'
+import json
+import sys
+summary = json.loads(sys.argv[1])["summary"]
+raise SystemExit(0 if summary["total_tokens"] == int(sys.argv[2]) and summary["request_count"] == int(sys.argv[3]) else 1)
+PY
+          then
+            return 0
+          fi
+          sleep 0.1
+        done
+        echo "collector did not reach exact accounting total=$expected_total requests=$expected_requests: $usage_json" >&2
+        return 1
+      }
+      assert_checkpoint_at_eof() {
+        python3 - "$data_dir/token-logger.db" "$source_dir/codex.jsonl" <<'PY'
+import os
+import sqlite3
+import sys
+db = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True)
+try:
+    rows = db.execute("SELECT boundary_offset FROM parser_checkpoints").fetchall()
+finally:
+    db.close()
+expected = os.path.getsize(sys.argv[2])
+if len(rows) != 1 or rows[0][0] != expected:
+    raise SystemExit(f"checkpoint boundary rows={rows!r}, expected one boundary at EOF {expected}")
+PY
+      }
+      assert_checkpoint_totals 148 3
+      assert_checkpoint_at_eof
+      cat >>"$source_dir/codex.jsonl" <<'EOF'
+{"type":"event_msg","id":"checkpoint-continued-event","timestamp":"2026-10-18T12:00:01Z","payload":{"type":"token_count","session_id":"cursor-session","project_id":"cursor-project","model":"gpt-test","info":{"total_token_usage":{"input_tokens":52,"output_tokens":10}}}}
+EOF
+      assert_checkpoint_totals 185 4
+      assert_checkpoint_at_eof
+      run_cli watch stop --timeout 10s >/dev/null
+  fi
   fi
 else
   run_cli watch start >/dev/null
@@ -336,7 +547,7 @@ import sys
 
 connection = sqlite3.connect(sys.argv[1])
 try:
-    connection.execute("UPDATE schema_migrations SET version = 16 WHERE version = (SELECT MAX(version) FROM schema_migrations)")
+    connection.execute("UPDATE schema_migrations SET version = 17 WHERE version = (SELECT MAX(version) FROM schema_migrations)")
     connection.commit()
 finally:
     connection.close()
@@ -346,6 +557,10 @@ if TOKEN_LOGGER_DATA_DIR="$refusal_env_dir" "$binary_path" usage --format json >
   echo "standalone CLI unexpectedly opened a newer unsupported database schema" >&2
   exit 1
 fi
+grep -Fq 'newer than supported version' "$tmp_dir/newer-schema-output.txt" || {
+  echo "standalone CLI failed for an unexpected reason instead of refusing the newer schema: $(cat "$tmp_dir/newer-schema-output.txt")" >&2
+  exit 1
+}
 [[ "$(file_sha256 "$refusal_dir/token-logger.db")" == "$refusal_digest" ]] || {
   echo "newer-schema refusal changed the database bytes" >&2
   exit 1

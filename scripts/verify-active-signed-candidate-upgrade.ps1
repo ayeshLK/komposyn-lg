@@ -18,8 +18,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$repo = if ($env:KOMPOSYN_REPO) { $env:KOMPOSYN_REPO } else { 'ayeshLK/komposyn' }
-$identity = '^https://github.com/ayeshLK/komposyn/.github/workflows/release.yml@refs/heads/master$'
+$repo = if ($env:KOMPOSYN_REPO) { $env:KOMPOSYN_REPO } elseif ($OldTag -eq 'v0.8.1') { 'ayeshLK/komposyn-lg' } else { 'ayeshLK/komposyn' }
+$identity = if ($OldTag -eq 'v0.8.1') { '^https://github.com/ayeshLK/komposyn-lg/.github/workflows/release.yml@refs/heads/master$' } else { '^https://github.com/ayeshLK/komposyn/.github/workflows/release.yml@refs/heads/master$' }
 $candidateIdentity = '^https://github.com/ayeshLK/komposyn-lg/.github/workflows/release.yml@refs/heads/master$'
 $issuer = 'https://token.actions.githubusercontent.com'
 foreach ($tool in @('gh', 'cosign')) {
@@ -78,6 +78,16 @@ try {
     Invoke-CLI @('settings','--collector','off','--auto-start','off') | Out-Null
     Invoke-CLI @('watch','add',$sourceDir) | Out-Null
     Invoke-CLI @('import',(Join-Path $sourceDir 'normal.jsonl'),'--format','json') | Out-Null
+    if ($OldTag -eq 'v0.8.1') {
+        @'
+import sqlite3, sys
+db=sqlite3.connect(f"file:{sys.argv[1]}?mode=ro",uri=True)
+version=db.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
+db.close()
+if version != 15: raise SystemExit(f"signed CLI v0.8.1 seeded schema {version}; expected 15")
+'@ | py -3 - (Join-Path $dataDir 'token-logger.db')
+        if ($LASTEXITCODE -ne 0) { throw 'signed CLI v0.8.1 did not create schema 15' }
+    }
     @'
 {"protocol":"komposyn.token-logger","version":1,"id":"init","method":"initialize","params":{}}
 {"protocol":"komposyn.token-logger","version":1,"id":"record","method":"record","params":{"event":{"event_id":"issue-46-active-id","schema_version":1,"event_type":"model.request","occurred_at":"2026-10-11T12:00:00Z","project_id":"issue-46-active-project","session_id":"issue-46-active-session","client":{"name":"issue-46-active"},"provider":"openai","requested_model":"gpt-test","usage":{"input_tokens":7,"output_tokens":3},"provenance":{"adapter":"fixture","source_id":"issue-46-active","source_record":"1"},"ingestion_key":"issue-46:active-id"},"project":{"id":"issue-46-active-project","root":"/issue-46-active-fixture","display_name":"Issue 46 active fixture"},"session":{"id":"issue-46-active-session","project_id":"issue-46-active-project","client":{"name":"issue-46-active"}}}}
@@ -117,7 +127,7 @@ db.commit()
     if (Get-Process -Id $oldPid -ErrorAction SilentlyContinue) { throw 'historical collector process survived cooperative stop' }
     Get-Process -Id $newStatus.pid -ErrorAction Stop | Out-Null
     $versionOutput = (& $binary version | Out-String).Trim()
-    if ($versionOutput -notmatch "komposyn-lg $candidateVersion \(core 0\.7\.1\)") { throw "candidate reports unexpected CLI/core versions: $versionOutput" }
+    if ($versionOutput -notmatch "komposyn-lg $candidateVersion \(core 0\.8\.0\)") { throw "candidate reports unexpected CLI/core versions: $versionOutput" }
     $nativeMetadata = (& go version -m $binary | Out-String)
     $expectedGoArch = if ($target -eq 'windows_arm64') { 'arm64' } else { 'amd64' }
     if ($nativeMetadata -notmatch "GOOS=windows" -or $nativeMetadata -notmatch "GOARCH=$expectedGoArch") { throw "installed candidate architecture differs from native target $target`n$nativeMetadata" }
@@ -143,6 +153,21 @@ if diagnostic != ('reviewed',) or stopped < 1: raise SystemExit(f"history/diagno
     if ($LASTEXITCODE -ne 0) { throw 'lease owner or diagnostic/collector history validation failed' }
     $backup = Get-ChildItem -LiteralPath $dataDir -Filter '.komposyn-pre-migration-*.sqlite' | Select-Object -First 1
     if (-not $backup) { throw 'historical migration did not create a restorable database backup' }
+    if ($OldTag -eq 'v0.8.1') {
+        @'
+import sqlite3, sys
+def read(path, query):
+ db=sqlite3.connect(f"file:{path}?mode=ro",uri=True)
+ try: return db.execute(query).fetchone()
+ finally: db.close()
+new_schema=read(sys.argv[1],"SELECT MAX(version) FROM schema_migrations")[0]
+integrity=read(sys.argv[2],"PRAGMA integrity_check")[0]
+source,target=read(sys.argv[2],"SELECT source_schema,target_schema FROM komposyn_migration_backup")
+backup_schema=read(sys.argv[2],"SELECT MAX(version) FROM schema_migrations")[0]
+if (new_schema,integrity,source,target,backup_schema)!=(16,'ok',15,16,15): raise SystemExit(f"schema-15-to-16 backup mismatch: {(new_schema,integrity,source,target,backup_schema)!r}")
+'@ | py -3 - (Join-Path $dataDir 'token-logger.db') $backup.FullName
+        if ($LASTEXITCODE -ne 0) { throw 'schema-15-to-16 migration or backup metadata is invalid' }
+    }
     $backupDigest = (Get-FileHash -Algorithm SHA256 -LiteralPath $backup.FullName).Hash
     $restoreDir = Join-Path $temp 'restore'
     New-Item -ItemType Directory -Path $restoreDir | Out-Null
@@ -150,7 +175,18 @@ if diagnostic != ('reviewed',) or stopped < 1: raise SystemExit(f"history/diagno
     $env:TOKEN_LOGGER_DATA_DIR = $restoreDir
     $restored = & (Join-Path $oldDir 'komposyn-lg.exe') usage --format json | Out-String
     if ($LASTEXITCODE -ne 0 -or $restored -notmatch 'total_tokens') { throw 'historical executable could not read restored migration backup' }
+    if ((Get-UsageSignature $restored) -ne $before) { throw 'restored migration backup changed historical usage totals' }
     $env:TOKEN_LOGGER_DATA_DIR = $dataDir
+
+    if ($OldTag -eq 'v0.8.1') {
+        Invoke-CLI @('watch','stop','--timeout','10s') | Out-Null
+        $beforeFiles = Get-ChildItem -LiteralPath $dataDir -Filter 'token-logger.db*' | Sort-Object Name | ForEach-Object { "$($_.Name):$((Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash)" }
+        $oldRefusal = & (Join-Path $oldDir 'komposyn-lg.exe') usage --format json 2>&1 | Out-String
+        if ($LASTEXITCODE -eq 0) { throw 'signed CLI v0.8.1 unexpectedly opened the migrated schema-16 database' }
+        if ($oldRefusal -notmatch 'newer than supported version') { throw "signed CLI v0.8.1 failed for an unexpected reason: $oldRefusal" }
+        $afterFiles = Get-ChildItem -LiteralPath $dataDir -Filter 'token-logger.db*' | Sort-Object Name | ForEach-Object { "$($_.Name):$((Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash)" }
+        if (($beforeFiles -join "`n") -ne ($afterFiles -join "`n")) { throw 'signed CLI v0.8.1 refusal mutated the schema-16 database or sidecars' }
+    }
 
     $env:TOKEN_LOGGER_DATA_DIR = $dataDir
     $env:KOMPOSYN_INSTALL_DIR = $installDir

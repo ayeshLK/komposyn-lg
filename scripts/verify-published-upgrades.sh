@@ -29,36 +29,40 @@ verify_release_assets() {
 	local tag="$1"
 	local directory="$2"
 	local asset="$3"
+	local release_repo="$4"
+	local release_identity="$5"
 	mkdir -p "$directory"
-	gh release download "$tag" --repo "$repo" --dir "$directory" \
+	gh release download "$tag" --repo "$release_repo" --dir "$directory" \
 		--pattern "$asset" --pattern "$asset.sig" --pattern "$asset.pem" \
-		--pattern SHA256SUMS --pattern SHA256SUMS.sig --pattern SHA256SUMS.pem
+		--pattern SHA256SUMS --pattern SHA256SUMS.sig --pattern SHA256SUMS.pem || return
 	cosign verify-blob --signature "$directory/SHA256SUMS.sig" \
 		--certificate "$directory/SHA256SUMS.pem" \
-		--certificate-identity-regexp "$identity" \
-		--certificate-oidc-issuer "$issuer" "$directory/SHA256SUMS" >/dev/null
+		--certificate-identity-regexp "$release_identity" \
+		--certificate-oidc-issuer "$issuer" "$directory/SHA256SUMS" >/dev/null || return
 	cosign verify-blob --signature "$directory/$asset.sig" \
 		--certificate "$directory/$asset.pem" \
-		--certificate-identity-regexp "$identity" \
-		--certificate-oidc-issuer "$issuer" "$directory/$asset" >/dev/null
+		--certificate-identity-regexp "$release_identity" \
+		--certificate-oidc-issuer "$issuer" "$directory/$asset" >/dev/null || return
 	(
 		cd "$directory"
 		grep -F "  $asset" SHA256SUMS | sha256sum -c - >/dev/null
-	)
+	) || return
 	mkdir "$directory/extracted"
 	if [[ "$archive_suffix" == zip ]]; then
 		if command -v unzip >/dev/null 2>&1; then
-			unzip -q "$directory/$asset" -d "$directory/extracted"
+			unzip -q "$directory/$asset" -d "$directory/extracted" || return
 		else
-			powershell.exe -NoProfile -Command "Expand-Archive -LiteralPath '$(cygpath -w "$directory/$asset")' -DestinationPath '$(cygpath -w "$directory/extracted")' -Force"
+			powershell.exe -NoProfile -Command "Expand-Archive -LiteralPath '$(cygpath -w "$directory/$asset")' -DestinationPath '$(cygpath -w "$directory/extracted")' -Force" || return
 		fi
 	else
-		tar -xzf "$directory/$asset" -C "$directory/extracted"
+		tar -xzf "$directory/$asset" -C "$directory/extracted" || return
 	fi
 	printf '%s\n' "$directory/extracted/$executable"
 }
 
-v060_binary="$(verify_release_assets v0.6.0 "$temp_dir/v0.6.0" "komposyn-lg_0.6.0_${target}.${archive_suffix}")"
-v070_binary="$(verify_release_assets v0.7.0 "$temp_dir/v0.7.0" "komposyn-lg_0.7.0_${target}.${archive_suffix}")"
+v060_binary="$(verify_release_assets v0.6.0 "$temp_dir/v0.6.0" "komposyn-lg_0.6.0_${target}.${archive_suffix}" "$repo" "$identity")"
+v070_binary="$(verify_release_assets v0.7.0 "$temp_dir/v0.7.0" "komposyn-lg_0.7.0_${target}.${archive_suffix}" "$repo" "$identity")"
+v081_binary="$(verify_release_assets v0.8.1 "$temp_dir/v0.8.1" "komposyn-lg_0.8.1_${target}.${archive_suffix}" ayeshLK/komposyn-lg '^https://github.com/ayeshLK/komposyn-lg/.github/workflows/release.yml@refs/heads/master$')"
 bash "$(dirname "${BASH_SOURCE[0]}")/verify-release.sh" "$candidate_dir" "$v060_binary" "$target"
 bash "$(dirname "${BASH_SOURCE[0]}")/verify-release.sh" "$candidate_dir" "$v070_binary" "$target"
+bash "$(dirname "${BASH_SOURCE[0]}")/verify-release.sh" "$candidate_dir" "$v081_binary" "$target" 15:16
