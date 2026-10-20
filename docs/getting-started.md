@@ -6,8 +6,9 @@ does not require provider credentials for importing or reporting.
 
 ## Prerequisites and installation
 
-Signed stable releases are available for macOS, Linux, and Windows on amd64
-and arm64. You do not need Go or provider credentials to install a release.
+Signed stable GitHub releases are available for macOS, Linux, and Windows on
+amd64 and arm64. You do not need Go or provider credentials to install a
+release.
 Follow the platform prerequisites and PATH setup in
 [Installation](installation.md); its installers verify both the SHA-256
 checksum and Cosign signature before installing.
