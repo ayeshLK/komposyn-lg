@@ -21,19 +21,19 @@ Cost estimates use a bundled pricing catalog. They are public list-price
 estimates, not invoices; missing pricing evidence remains unknown. See
 [usage and cost reporting](docs/usage.md#reports) for coverage and limitations.
 
-### See it with synthetic example data
+### komposyn-lg in action
 
 The reviewed demo uses **komposyn-lg v0.9.0** with **KompoSyn core v0.8.0**.
 The short looping GIF is a compressed preview, not the full 30.17-second source
-recording. The sample shows a Codex public list-price estimate, Claude
+recording. It shows a Codex public list-price estimate, Claude
 cost remaining unknown without billing context, and no provider-reported cost
 in the fixture.
 
-![Short looping synthetic usage demo preview: aggregate Codex and Claude Code report, project and session navigation, pricing coverage, and exact JSON export.](docs/demo/assets/komposyn-lg-demo.gif)
+![Short looping usage demo preview: aggregate Codex and Claude Code report, project and session navigation, pricing coverage, and exact JSON export.](docs/demo/assets/komposyn-lg-demo.gif)
 
 Static alternative:
 
-[![Static overall report for synthetic Codex and Claude Code usage, with a public list-price estimate and unknown Claude cost; no provider-reported cost is present.](docs/demo/assets/overall-report.png)](docs/demo/assets/overall-report.png)
+[![Static overall report for Codex and Claude Code usage, with a public list-price estimate and unknown Claude cost; no provider-reported cost is present.](docs/demo/assets/overall-report.png)](docs/demo/assets/overall-report.png)
 
 See the [source recording, captions, and reproduction notes](docs/demo/README.md).
 
