@@ -1,18 +1,19 @@
+<div align="center">
+
 # komposyn-lg
 
 **Your AI coding usage. One local history.**
 
-[![Latest release](https://img.shields.io/github/v/release/ayeshLK/komposyn-lg)](https://github.com/ayeshLK/komposyn-lg/releases/latest)
-[![CI](https://github.com/ayeshLK/komposyn-lg/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/ayeshLK/komposyn-lg/actions/workflows/ci.yml)
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/ayeshLK/komposyn-lg)](https://github.com/ayeshLK/komposyn-lg/releases/latest) [![CI](https://github.com/ayeshLK/komposyn-lg/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/ayeshLK/komposyn-lg/actions/workflows/ci.yml) [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
+[Install](#install) · [First report](#first-useful-report) · [Uninstall](#uninstall) · [Documentation](docs/README.md) · [Contributing](CONTRIBUTING.md)
+
+</div>
 
 `komposyn-lg` (pronounced “composing log”) is for developers who use Codex and
 Claude Code across projects and want to see where their token usage goes. It
 imports supported local records into one history you can explore by project,
 session, and model from your terminal.
-
-[Install](#install) · [First report](#first-useful-report) · [Uninstall](#uninstall) ·
-[Documentation](docs/README.md) · [Contributing](CONTRIBUTING.md)
 
 Provider files are read-only. `komposyn-lg` stores usage metadata and does not
 capture prompts, responses, or credentials by default. It has no telemetry.
@@ -21,11 +22,15 @@ Cost estimates use a bundled pricing catalog. They are public list-price
 estimates, not invoices; missing pricing evidence remains unknown. See
 [usage and cost reporting](docs/usage.md#reports) for coverage and limitations.
 
+<div align="center">
+
 ### komposyn-lg in action
 
 The REPL demo uses **komposyn-lg v0.9.0**.
 
 ![Interactive report walkthrough: browse projects, open Ledger Studio, then review its Codex and Claude Code sessions.](docs/demo/assets/komposyn-lg-repl-demo.gif)
+
+</div>
 
 ## Install
 
