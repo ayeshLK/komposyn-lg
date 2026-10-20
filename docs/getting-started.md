@@ -27,9 +27,15 @@ Confirm the binary and version:
 ./bin/komposyn-lg version
 ```
 
+The version command above checks the source-built binary. For an installed
+release, check it with `komposyn-lg version`. The examples below use the
+installed command; from the repository root, use `./bin/komposyn-lg` in its
+place when following the source-build path.
+
 ## Get your first report
 
-Run the CLI:
+Run the installed CLI, or use `./bin/komposyn-lg` from the repository root if
+you built it from source:
 
 ```sh
 komposyn-lg
@@ -39,9 +45,11 @@ On first use, onboarding asks whether to start the local collector now and
 whether to start it automatically on future launches of the interactive
 interface. If you opt in, the collector reads configured Codex and Claude Code
 directories; it does not modify provider files. The first scan is asynchronous.
-Wait for the collector notice that reports a completed scan, or run `/status`
-and check `last_completed` and source counts. Then run this inside the
-interactive view:
+The collector notice appears at prompt boundaries, so it may not appear while
+the prompt is idle. Run `/status` and check `last_completed` and source counts.
+If `last_completed` is not available yet, run `/status` again later, or press
+Enter to return through a prompt boundary and then inspect status. Once a scan
+has completed, run this inside the interactive view to query committed data:
 
 ```text
 /total-usage

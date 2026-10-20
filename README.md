@@ -77,6 +77,9 @@ For a pinned version, a custom install directory, local release artifacts, or
 manual verification, see the [installation guide](docs/installation.md) and
 [release verification guide](docs/release-verification.md). You can also browse
 all [release downloads and notes](https://github.com/ayeshLK/komposyn-lg/releases).
+If you build from source, run `./bin/komposyn-lg` from the repository root;
+the command examples below otherwise assume the installed `komposyn-lg` is on
+your `PATH`.
 
 ## First useful report
 
@@ -89,9 +92,11 @@ komposyn-lg
 On first use, onboarding asks whether to start the local collector now and
 whether to start it automatically on future REPL launches. Collection is opt-in
 and reads configured Codex and Claude Code source directories without
-changing them. The first scan is asynchronous. Wait for the collector notice
-that reports a completed scan, or use `/status` to check `last_completed` and
-source counts. Then ask for the report:
+changing them. The first scan is asynchronous. Run `/status` and check
+`last_completed` and source counts. If `last_completed` is not available yet,
+run `/status` again later, or press Enter to return through a prompt boundary
+and then inspect status. Once a scan has completed, run `/total-usage` (or
+`/refresh`) to query committed data:
 
 ```text
 /total-usage
