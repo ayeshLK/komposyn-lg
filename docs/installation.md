@@ -17,14 +17,23 @@ system and architecture. The standalone binary is named `komposyn-lg` (or
 bash scripts/install.sh
 ```
 
-The Unix installer requires `curl`, `jq`, `tar`, and `cosign` when downloading
-and verifying a published release. It resolves GitHub's latest stable release,
+On macOS and Linux, the installer requires Bash, `curl`, `jq`, `tar`,
+`sha256sum` or `shasum`, and `cosign` on your `PATH` to download and verify a
+published release. It resolves GitHub's latest stable release,
 prints the concrete tag, then downloads every artifact from that immutable tag.
 Drafts, prereleases, malformed metadata, and API failures are rejected. Set
 `KOMPOSYN_VERSION=vX.Y.Z` to pin a specific stable release. For local
 verification or air-gapped preparation, set `KOMPOSYN_RELEASE_DIR` to a
 directory containing the archive, `SHA256SUMS`, signature, and certificate;
 the manifest's version is validated against any explicit pin.
+
+The default install directory is `~/.local/bin`. Add it to your shell startup
+file if it is not already on `PATH`; for example, add this to `~/.profile`,
+`~/.bashrc`, or `~/.zshrc`, then open a new terminal:
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+```
 
 Useful overrides include `KOMPOSYN_VERSION`, `KOMPOSYN_REPO`,
 `KOMPOSYN_INSTALL_DIR`, and `KOMPOSYN_RELEASE_DIR`.
@@ -38,13 +47,28 @@ directory:
 .\scripts\install.ps1
 ```
 
-PowerShell and `cosign` are required. By default, the installer resolves and
-prints the latest stable release tag, rejecting malformed or unavailable
-metadata, and pins all artifacts to that tag. Set `$env:KOMPOSYN_VERSION` to
-`vX.Y.Z` to pin a specific stable version. Use `KOMPOSYN_RELEASE_DIR` and
-`KOMPOSYN_INSTALL_DIR` to select local artifacts and an installation path. Add
-the installation directory to `PATH` if the command is not found in a new
-terminal.
+PowerShell and `cosign` on your `PATH` are required. Keep
+`windows-architecture.ps1` beside `install.ps1`; the helper detects native
+Windows ARM64 and selects the matching release archive. By default, the
+installer resolves and prints the latest stable release tag, rejecting
+malformed or unavailable metadata, and pins all artifacts to that tag. Set
+`$env:KOMPOSYN_VERSION` to `vX.Y.Z` to pin a specific stable version. Use
+`KOMPOSYN_RELEASE_DIR` and `KOMPOSYN_INSTALL_DIR` to select local artifacts
+and an installation path.
+
+The default install directory is `$env:LOCALAPPDATA\Komposyn\bin`. Add it to
+your user `PATH` if the command is not found in a new terminal. This command
+adds it to the user `PATH` and the current session:
+
+```powershell
+$installDir = Join-Path $env:LOCALAPPDATA 'Komposyn\bin'
+$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+if (($userPath -split ';') -notcontains $installDir) {
+  $newUserPath = if ([string]::IsNullOrWhiteSpace($userPath)) { $installDir } else { $userPath + ';' + $installDir }
+  [Environment]::SetEnvironmentVariable('Path', $newUserPath, 'User')
+}
+$env:Path = $installDir + ';' + $env:Path
+```
 
 ## Verify an extracted release
 
@@ -57,7 +81,7 @@ bash scripts/verify-release.sh /path/to/release-dir
 
 ## Upgrade and uninstall
 
-For the initial release, upgrade by rerunning the latest standalone installer.
+To upgrade, rerun the latest standalone installer.
 It replaces the executable and preserves the existing SQLite database,
 settings, consent choices, diagnostics, and data directory. New installations
 use `$HOME/.komposyn/token-logger/data` (or the equivalent under the Windows
