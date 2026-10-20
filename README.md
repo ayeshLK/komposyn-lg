@@ -23,7 +23,7 @@ estimates, not invoices; missing pricing evidence remains unknown. See
 
 ### komposyn-lg in action
 
-The reviewed REPL demo uses **komposyn-lg v0.9.0**.
+The REPL demo uses **komposyn-lg v0.9.0**.
 
 ![Interactive report walkthrough: browse projects, open Ledger Studio, then review its Codex and Claude Code sessions.](docs/demo/assets/komposyn-lg-repl-demo.gif)
 
