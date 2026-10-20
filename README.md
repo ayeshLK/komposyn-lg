@@ -27,10 +27,6 @@ The REPL demo uses **komposyn-lg v0.9.0**.
 
 ![Interactive report walkthrough: browse projects, open Ledger Studio, then review its Codex and Claude Code sessions.](docs/demo/assets/komposyn-lg-repl-demo.gif)
 
-Static alternative:
-
-[![Overall report for Codex and Claude Code usage, showing a public list-price estimate and unknown Claude pricing.](docs/demo/assets/overall-report.png)](docs/demo/assets/overall-report.png)
-
 ## Install
 
 Signed stable releases are published for **Linux, macOS, and Windows**, on both
