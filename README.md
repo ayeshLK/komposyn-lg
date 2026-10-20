@@ -1,35 +1,24 @@
-# KompoSyn Token Logger CLI
+# komposyn-lg
 
-**See where your AI coding tokens go.**
+**Your AI coding usage. One local history.**
 
 [![Latest release](https://img.shields.io/github/v/release/ayeshLK/komposyn-lg)](https://github.com/ayeshLK/komposyn-lg/releases/latest)
 [![CI](https://github.com/ayeshLK/komposyn-lg/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/ayeshLK/komposyn-lg/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-KompoSyn imports token usage from **Codex and Claude Code** into a local SQLite
-database. Explore usage by project, session, model, or provider, inspect reported
-costs and available price estimates, and keep your history current with a
-background collector—all from your terminal.
+`komposyn-lg` (pronounced “composing log”) is for developers who use Codex and
+Claude Code across projects and want to see where their token usage goes. It
+imports supported local records into one history you can explore by project,
+session, and model from your terminal.
 
-[Install](#install) · [Quick start](#quick-start) · [Uninstall](#uninstall) ·
+[Install](#install) · [First report](#first-useful-report) · [Uninstall](#uninstall) ·
 [Documentation](docs/README.md) · [Contributing](CONTRIBUTING.md)
 
-## What you can do
+Provider files are read-only. `komposyn-lg` stores usage metadata and does not
+capture prompts, responses, or credentials by default. It has no telemetry.
 
-- **Bring usage together.** Import supported local transcript files or directories;
-  repeated imports deduplicate events.
-- **Understand your usage.** Filter and group token, cost, and session reports.
-  Export exact values as JSON or CSV for your own tools.
-- **Keep collecting.** Register source directories and run a managed background
-  collector, or watch sources in the foreground. Supported append-only updates
-  reuse durable checkpoints after the collector validates source history.
-- **Stay in the terminal.** Open the interactive interface for onboarding,
-  reports, and collector settings, or use individual commands in scripts.
-- **Keep data local.** Provider files are read-only. KompoSyn stores usage metadata
-  without capturing prompts, responses, or credentials, and has no telemetry.
-
-Cost estimates use a bundled pricing catalog. They are public list-price estimates,
-not invoices; missing pricing evidence remains unknown. See
+Cost estimates use a bundled pricing catalog. They are public list-price
+estimates, not invoices; missing pricing evidence remains unknown. See
 [usage and cost reporting](docs/usage.md#reports) for coverage and limitations.
 
 ## Install
@@ -67,9 +56,11 @@ Requires PowerShell and
 $d = Join-Path $env:TEMP ([guid]::NewGuid()); New-Item -ItemType Directory -Path $d | Out-Null; try { Invoke-WebRequest -Uri https://raw.githubusercontent.com/ayeshLK/komposyn-lg/master/scripts/install.ps1 -OutFile (Join-Path $d 'install.ps1'); Invoke-WebRequest -Uri https://raw.githubusercontent.com/ayeshLK/komposyn-lg/master/scripts/windows-architecture.ps1 -OutFile (Join-Path $d 'windows-architecture.ps1'); & (Join-Path $d 'install.ps1') } finally { Remove-Item -LiteralPath $d -Recurse -Force }
 ```
 
-The default installation directory is `$env:LOCALAPPDATA\Komposyn\bin`.
-Add that directory to your user `PATH` and open a new terminal. To use it in the
-current PowerShell session:
+The default installation directory is `$env:LOCALAPPDATA\Komposyn\bin`. Add
+that directory to your user `PATH` and open a new terminal. The installer
+downloads `windows-architecture.ps1` beside `install.ps1`; keep both files
+together so the helper can select the native Windows ARM64 release when needed.
+To use the installed command in the current PowerShell session:
 
 ```powershell
 $env:Path = "$env:LOCALAPPDATA\Komposyn\bin;$env:Path"
@@ -87,45 +78,52 @@ manual verification, see the [installation guide](docs/installation.md) and
 [release verification guide](docs/release-verification.md). You can also browse
 all [release downloads and notes](https://github.com/ayeshLK/komposyn-lg/releases).
 
-## Quick start
+## First useful report
 
-Open the interactive interface:
+Run the interactive interface:
 
 ```sh
 komposyn-lg
 ```
 
-The first launch asks whether to enable local collection and saves your choice.
-You can also import a transcript directory and inspect reports directly:
+On first use, onboarding asks whether to start the local collector now and
+whether to start it automatically on future REPL launches. Collection is opt-in
+and reads configured Codex and Claude Code source directories without
+changing them. The first scan is asynchronous. Wait for the collector notice
+that reports a completed scan, or use `/status` to check `last_completed` and
+source counts. Then ask for the report:
 
-```sh
-komposyn-lg import /path/to/transcripts
-komposyn-lg usage
-komposyn-lg cost
-komposyn-lg sessions
+```text
+/total-usage
 ```
 
-To collect from the default Codex and Claude Code directories in the background:
+Explore a project and its sessions using row numbers shown in the current
+tables:
 
-```sh
-komposyn-lg watch add --defaults
-komposyn-lg watch start
-komposyn-lg watch status
+```text
+/projects
+/project 1
+/sessions
+/session 1
+/models
+/model 1
 ```
 
-Stop collection with `komposyn-lg watch stop`. Register custom directories with
-`komposyn-lg watch add /path/to/transcripts`.
+The `1` selectors above are examples: choose a row from the table currently
+shown. Use `/back` or `/home` to move to a broader view. The first report may
+be empty if no supported usage has been collected yet; see the
+[getting started guide](docs/getting-started.md) for manual import.
 
-Filter reports or export them for further analysis:
+For exact token integers or machine-readable output, run JSON or CSV export from
+a shell after leaving the interactive view:
 
 ```sh
-komposyn-lg usage --group-by project,model
-komposyn-lg cost --provider openai --format json
+komposyn-lg usage --group-by project,model --format json > usage.json
 komposyn-lg sessions --format csv > sessions.csv
 ```
 
-Use `komposyn-lg help <command>` for command-specific help, or follow the
-[getting started guide](docs/getting-started.md).
+Reported costs remain separate from public list-price estimates. Estimates are
+not invoices, and missing pricing evidence remains unknown.
 
 ## Upgrade
 
@@ -196,8 +194,13 @@ lifecycle. The separately versioned [KompoSyn core](https://github.com/ayeshLK/k
 owns the reusable model, SQLite storage, provider adapters, pricing, and reports.
 `komposyn-lg version` displays both the CLI and core versions.
 
-[Open an issue](https://github.com/ayeshLK/komposyn-lg/issues) for bugs or feature
-requests. Report vulnerabilities privately using [SECURITY.md](SECURITY.md).
+For installation feedback or a reproducible bug,
+[open an issue](https://github.com/ayeshLK/komposyn-lg/issues) with your CLI
+version, operating system, command, sanitized output, and steps to reproduce.
+Do not attach provider transcripts, prompts, responses, credentials, private
+paths, or raw diagnostics. For code or documentation contributions, start with
+[CONTRIBUTING.md](CONTRIBUTING.md). Report vulnerabilities privately using
+[SECURITY.md](SECURITY.md).
 
 ## License
 
