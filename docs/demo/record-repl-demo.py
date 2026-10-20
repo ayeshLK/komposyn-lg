@@ -56,16 +56,47 @@ def row_number(transcript, label):
     return match.group(1)
 
 
+def forward_output(fd, transcript, timeout):
+    deadline = time.monotonic() + timeout
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return
+        ready, _, _ = select.select([fd], [], [], remaining)
+        if not ready:
+            return
+        try:
+            chunk = os.read(fd, 8192)
+        except OSError as error:
+            if error.errno == errno.EIO:
+                return
+            raise
+        if not chunk:
+            return
+        os.write(sys.stdout.fileno(), chunk)
+        transcript.extend(chunk)
+
+
+def command_is_visible(transcript, command):
+    plain = ANSI.sub(b"", transcript).decode("utf-8", "replace").replace("\r", "")
+    return plain.rstrip().endswith("> " + command)
+
+
 def send_command(fd, command):
+    transcript = bytearray()
     for character in command:
         os.write(fd, character.encode("utf-8"))
-        ready, _, _ = select.select([fd], [], [], TYPE_DELAY)
-        if ready:
-            chunk = os.read(fd, 8192)
-            if chunk:
-                os.write(sys.stdout.fileno(), chunk)
+        forward_output(fd, transcript, TYPE_DELAY)
         time.sleep(TYPE_DELAY)
-    time.sleep(COMMAND_HOLD)
+    deadline = time.monotonic() + 2
+    while not command_is_visible(transcript, command) and time.monotonic() < deadline:
+        forward_output(fd, transcript, 0.05)
+    if not command_is_visible(transcript, command):
+        raise RuntimeError(f"typed command was not visibly echoed before submission: {command!r}")
+
+    hold_until = time.monotonic() + COMMAND_HOLD
+    while time.monotonic() < hold_until:
+        forward_output(fd, transcript, min(0.05, hold_until - time.monotonic()))
     os.write(fd, b"\r")
 
 

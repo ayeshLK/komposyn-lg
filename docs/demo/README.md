@@ -44,7 +44,7 @@ Record and render the actual interaction (the capture tool paths may differ by p
     mkdir -m 700 /tmp/komposyn-demo-render
     AGG_BIN=/path/to/agg docs/demo/render-repl-assets.sh /tmp/komposyn-demo-data/komposyn-lg-repl.cast /tmp/komposyn-demo-render
 
-The recording driver uses only Python's standard library. Rendering requires asciinema 3.2.1 and agg 1.9.0. The REPL GIF loops for 18.81 seconds and pauses about two to three seconds on each result; the separate shell/export cast remains the 30.17-second recording paired with `captions.vtt`. The README's static alternative is the overall-report screenshot, not a still from the REPL.
+The recording driver uses only Python's standard library. Rendering requires asciinema 3.2.1 and agg 1.9.0. The REPL GIF loops for 21.03 seconds. It visibly holds each complete command for about one second before submission and each result for about three seconds; the separate shell/export cast remains the 30.17-second recording paired with `captions.vtt`. The README's static alternative is the overall-report screenshot, not a still from the REPL.
 
 Temporary data, harness responses, and generated recording renders are kept outside the repository. To clean up, remove only the dedicated directories created above after checking their exact paths:
 
