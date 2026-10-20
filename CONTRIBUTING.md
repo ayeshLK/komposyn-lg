@@ -24,3 +24,19 @@ release changes, also run the platform lifecycle checks and verify signatures,
 checksums, upgrade preservation, and data-preserving uninstall. Report exact
 commands and results in pull requests. Never create or move release tags
 manually; use the reviewed Release Please and protected publication workflow.
+
+## Reporting problems and contributing
+
+For installation feedback or a reproducible CLI bug, open an issue in the
+[komposyn-lg issue tracker](https://github.com/ayeshLK/komposyn-lg/issues).
+Include the CLI version, operating system and architecture, command, sanitized
+output, and steps to reproduce. Remove private paths and project names. Do not
+attach provider transcripts, prompts, responses, credentials, or raw
+diagnostics. Report vulnerabilities privately using the process in
+[SECURITY.md](SECURITY.md); do not report them in public issues.
+
+Documentation and code contributions are welcome. Before opening a pull
+request, read the relevant ownership and privacy guidance in this file and
+[AGENTS.md](AGENTS.md), and describe the user problem, changes, and checks you
+ran. Library, parser, storage, pricing, and report behavior belongs in the
+[KompoSyn core repository](https://github.com/ayeshLK/komposyn).
