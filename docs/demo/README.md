@@ -29,7 +29,7 @@ The fixture uses protocol-v1 synthetic records only, with fixed dates, three ses
 
 ## Reproduce the REPL walkthrough
 
-The README REPL capture is terminal input/output from the signed v0.9.0 binary against the isolated fixture above. It uses no provider directories and does not start a collector. It shows the overall report, project list, selected project, and that project's sessions. The project row is chosen from the displayed project table. The loop pauses briefly at each view and types commands at a readable pace.
+The README REPL capture is terminal input/output from the signed v0.9.0 binary against the isolated fixture above. It uses no provider directories and does not start a collector. It begins at the live prompt, types `/projects`, selects row 1 with `/project 1`, then types `/sessions`. The selected project is Ledger Studio, and each result appears on a cleared screen. Keystrokes are forwarded live so the typed commands remain visible. The loop gives each result time to read without lingering on a static prompt.
 
 After creating a fresh dedicated work directory and seeding it as above, mark onboarding complete with collection disabled:
 
@@ -44,7 +44,7 @@ Record and render the actual interaction (the capture tool paths may differ by p
     mkdir -m 700 /tmp/komposyn-demo-render
     AGG_BIN=/path/to/agg docs/demo/render-repl-assets.sh /tmp/komposyn-demo-data/komposyn-lg-repl.cast /tmp/komposyn-demo-render
 
-The recording driver uses only Python's standard library. Rendering requires asciinema 3.2.1 and agg 1.9.0. The REPL GIF loops for 11.06 seconds and pauses about three seconds on each view; the separate shell/export cast remains the 30.17-second recording paired with `captions.vtt`. The README's static alternative is the overall-report screenshot, not a still from the REPL.
+The recording driver uses only Python's standard library. Rendering requires asciinema 3.2.1 and agg 1.9.0. The REPL GIF loops for 18.81 seconds and pauses about two to three seconds on each result; the separate shell/export cast remains the 30.17-second recording paired with `captions.vtt`. The README's static alternative is the overall-report screenshot, not a still from the REPL.
 
 Temporary data, harness responses, and generated recording renders are kept outside the repository. To clean up, remove only the dedicated directories created above after checking their exact paths:
 
@@ -56,6 +56,6 @@ See [asset-manifest.md](asset-manifest.md) for individual sizes, captions, alter
 
 ## Validation and release note
 
-The fixture was seeded and queried with the signed binary; its totals and cost coverage were checked against the generated JSON. The shell/export capture covers overall usage, project navigation, sessions, model grouping, pricing coverage, and exact JSON export. The REPL capture shows actual project selection from its table followed by the selected project's session list. Full-width terminal visuals are readable at normal desktop README scale; at phone width text is too small to read without zoom. Use descriptive alt text and retain both source casts for accessible text review rather than shrinking the visuals further.
+The fixture was seeded and queried with the signed binary; its totals and cost coverage were checked against the generated JSON. The shell/export capture covers overall usage, project navigation, sessions, model grouping, pricing coverage, and exact JSON export. The REPL capture shows the typed command sequence and its three resulting views. Full-width terminal visuals are readable at normal desktop README scale; at phone width text is too small to read without zoom. Use descriptive alt text and retain both source casts for accessible text review rather than shrinking the visuals further.
 
 At capture time, the target repository's SECURITY.md still described v0.8.1 as its latest release; the GitHub release page and verified signed artifacts show v0.9.0. This documentation records the artifact actually used and does not change that unrelated repository file.

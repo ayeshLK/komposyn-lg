@@ -24,10 +24,12 @@ estimates, not invoices; missing pricing evidence remains unknown. See
 ### komposyn-lg in action
 
 The reviewed REPL demo uses **komposyn-lg v0.9.0** with **KompoSyn core
-v0.8.0**. The short looping GIF pauses on the project list, a selected project,
-and its sessions; the separate supporting shell/export recording in the demo
-notes is 30.17 seconds. The report shows a Codex public list-price estimate
-separately from unknown Claude pricing. Provider-reported costs are absent.
+v0.8.0** against synthetic example data. It shows the live prompt, types
+`/projects`, opens the first project with `/project 1`, then types `/sessions`;
+each result gets a clear screen and time to read. The loop is 18.81 seconds.
+The separate supporting shell/export recording in the demo notes is 30.17
+seconds. The report shows a Codex public list-price estimate separately from
+unknown Claude pricing. Provider-reported costs are absent.
 
 ![Interactive report walkthrough: browse projects, open Ledger Studio, then review its Codex and Claude Code sessions.](docs/demo/assets/komposyn-lg-repl-demo.gif)
 

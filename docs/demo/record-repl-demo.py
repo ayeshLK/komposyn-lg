@@ -19,7 +19,8 @@ import time
 CLI = os.environ.get("CLI_BIN", "komposyn-lg")
 ROWS = int(os.environ.get("DEMO_ROWS", "32"))
 COLS = int(os.environ.get("DEMO_COLS", "150"))
-TYPE_DELAY = float(os.environ.get("DEMO_TYPE_DELAY", "0.045"))
+TYPE_DELAY = float(os.environ.get("DEMO_TYPE_DELAY", "0.065"))
+COMMAND_HOLD = float(os.environ.get("DEMO_COMMAND_HOLD", "0.8"))
 ANSI = re.compile(rb"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))")
 
 
@@ -58,8 +59,20 @@ def row_number(transcript, label):
 def send_command(fd, command):
     for character in command:
         os.write(fd, character.encode("utf-8"))
+        ready, _, _ = select.select([fd], [], [], TYPE_DELAY)
+        if ready:
+            chunk = os.read(fd, 8192)
+            if chunk:
+                os.write(sys.stdout.fileno(), chunk)
         time.sleep(TYPE_DELAY)
+    time.sleep(COMMAND_HOLD)
     os.write(fd, b"\r")
+
+
+def clear_view(fd):
+    """Use the REPL's documented Ctrl-L clear before the next view."""
+    os.write(fd, b"\x0c")
+    read_until_prompt(fd, bytearray())
 
 
 def main():
@@ -91,11 +104,13 @@ def main():
         time.sleep(2.2)
 
         project_row = row_number(transcript, "Ledger Studio")
+        clear_view(fd)
         transcript = bytearray()
         send_command(fd, f"/project {project_row}")
         read_until_prompt(fd, transcript, b"Ledger Studio")
         time.sleep(2.2)
 
+        clear_view(fd)
         transcript = bytearray()
         send_command(fd, "/sessions")
         read_until_prompt(fd, transcript, b"SESSION")
