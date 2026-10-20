@@ -29,7 +29,7 @@ The fixture uses protocol-v1 synthetic records only, with fixed dates, three ses
 
 ## Reproduce the REPL walkthrough
 
-The README REPL capture is terminal input/output from the signed v0.9.0 binary against the isolated fixture above. It uses no provider directories, does not start a collector, and chooses the project and session by matching their rows in the displayed tables. The capture shows the overall report, project list, project summary, session list, and a selected session's model breakdown. Its final frame is the static README alternative.
+The README REPL capture is terminal input/output from the signed v0.9.0 binary against the isolated fixture above. It uses no provider directories and does not start a collector. It shows the overall report, project list, selected project, and that project's sessions. The project row is chosen from the displayed project table. The loop pauses briefly at each view and types commands at a readable pace.
 
 After creating a fresh dedicated work directory and seeding it as above, mark onboarding complete with collection disabled:
 
@@ -40,11 +40,11 @@ After creating a fresh dedicated work directory and seeding it as above, mark on
 
 Record and render the actual interaction (the capture tool paths may differ by platform):
 
-    CLI_BIN="$CLI_BIN" TOKEN_LOGGER_DATA_DIR=/tmp/komposyn-demo-data/data asciinema record --headless --window-size 150x32 --title 'komposyn-lg interactive demo on synthetic fixture' --idle-time-limit 1 --return --command 'python3 docs/demo/record-repl-demo.py' /tmp/komposyn-demo-data/komposyn-lg-repl.cast
+    CLI_BIN="$CLI_BIN" TOKEN_LOGGER_DATA_DIR=/tmp/komposyn-demo-data/data asciinema record --headless --window-size 150x32 --title 'komposyn-lg interactive demo on synthetic fixture' --idle-time-limit 3 --return --command 'python3 docs/demo/record-repl-demo.py' /tmp/komposyn-demo-data/komposyn-lg-repl.cast
     mkdir -m 700 /tmp/komposyn-demo-render
     AGG_BIN=/path/to/agg docs/demo/render-repl-assets.sh /tmp/komposyn-demo-data/komposyn-lg-repl.cast /tmp/komposyn-demo-render
 
-The recording driver uses only Python's standard library. Rendering requires the same asciinema 3.2.1, agg 1.9.0, and Pillow 10.2.0 versions listed above. The REPL GIF is a short looping preview; the separate shell/export cast remains the 30.17-second recording paired with `captions.vtt`.
+The recording driver uses only Python's standard library. Rendering requires asciinema 3.2.1 and agg 1.9.0. The REPL GIF loops for 11.06 seconds and pauses about three seconds on each view; the separate shell/export cast remains the 30.17-second recording paired with `captions.vtt`. The README's static alternative is the overall-report screenshot, not a still from the REPL.
 
 Temporary data, harness responses, and generated recording renders are kept outside the repository. To clean up, remove only the dedicated directories created above after checking their exact paths:
 
@@ -56,6 +56,6 @@ See [asset-manifest.md](asset-manifest.md) for individual sizes, captions, alter
 
 ## Validation and release note
 
-The fixture was seeded and queried with the signed binary; its totals and cost coverage were checked against the generated JSON. The shell/export capture covers overall usage, project navigation, sessions, model grouping, pricing coverage, and exact JSON export. The REPL capture shows actual table-driven project/session navigation and selected-session model grouping. Full-width terminal visuals are readable at normal desktop README scale; at phone width text is too small to read without zoom. Use descriptive alt text and retain both source casts for accessible text review rather than shrinking the visuals further.
+The fixture was seeded and queried with the signed binary; its totals and cost coverage were checked against the generated JSON. The shell/export capture covers overall usage, project navigation, sessions, model grouping, pricing coverage, and exact JSON export. The REPL capture shows actual project selection from its table followed by the selected project's session list. Full-width terminal visuals are readable at normal desktop README scale; at phone width text is too small to read without zoom. Use descriptive alt text and retain both source casts for accessible text review rather than shrinking the visuals further.
 
 At capture time, the target repository's SECURITY.md still described v0.8.1 as its latest release; the GitHub release page and verified signed artifacts show v0.9.0. This documentation records the artifact actually used and does not change that unrelated repository file.

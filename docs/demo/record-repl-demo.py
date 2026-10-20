@@ -18,7 +18,8 @@ import time
 
 CLI = os.environ.get("CLI_BIN", "komposyn-lg")
 ROWS = int(os.environ.get("DEMO_ROWS", "32"))
-COLS = int(os.environ.get("DEMO_COLS", "100"))
+COLS = int(os.environ.get("DEMO_COLS", "150"))
+TYPE_DELAY = float(os.environ.get("DEMO_TYPE_DELAY", "0.045"))
 ANSI = re.compile(rb"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))")
 
 
@@ -55,7 +56,10 @@ def row_number(transcript, label):
 
 
 def send_command(fd, command):
-    os.write(fd, command.encode("utf-8") + b"\r")
+    for character in command:
+        os.write(fd, character.encode("utf-8"))
+        time.sleep(TYPE_DELAY)
+    os.write(fd, b"\r")
 
 
 def main():
@@ -79,36 +83,24 @@ def main():
     try:
         transcript = bytearray()
         read_until_prompt(fd, transcript)
-        sequence = ["/projects"]
-        for command in sequence:
-            transcript = bytearray()
-            send_command(fd, command)
-            read_until_prompt(fd, transcript, b"PROJECT")
+        time.sleep(2)
+
+        transcript = bytearray()
+        send_command(fd, "/projects")
+        read_until_prompt(fd, transcript, b"PROJECT")
+        time.sleep(2.2)
 
         project_row = row_number(transcript, "Ledger Studio")
         transcript = bytearray()
         send_command(fd, f"/project {project_row}")
         read_until_prompt(fd, transcript, b"Ledger Studio")
+        time.sleep(2.2)
 
         transcript = bytearray()
         send_command(fd, "/sessions")
         read_until_prompt(fd, transcript, b"SESSION")
-        session_row = row_number(transcript, "session-ledger-codex")
+        time.sleep(2.8)
 
-        transcript = bytearray()
-        send_command(fd, f"/session {session_row}")
-        read_until_prompt(fd, transcript, b"MODEL")
-        time.sleep(0.8)
-
-        transcript = bytearray()
-        send_command(fd, "/clear")
-        read_until_prompt(fd, transcript)
-
-        transcript = bytearray()
-        send_command(fd, "/models")
-        read_until_prompt(fd, transcript, b"MODEL")
-
-        time.sleep(1.5)
         send_command(fd, "/quit")
         _, status = os.waitpid(pid, 0)
         if not os.WIFEXITED(status) or os.WEXITSTATUS(status) != 0:
