@@ -38,8 +38,6 @@ Static alternative:
 
 [![Overall report for Codex and Claude Code usage, showing a public list-price estimate and unknown Claude pricing.](docs/demo/assets/overall-report.png)](docs/demo/assets/overall-report.png)
 
-See the [REPL source recording, supporting shell/export recording, and reproduction notes](docs/demo/README.md).
-
 ## Install
 
 Signed stable releases are published for **Linux, macOS, and Windows**, on both
