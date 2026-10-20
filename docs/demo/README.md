@@ -1,6 +1,6 @@
 # KompoSyn CLI demonstration assets
 
-These assets demonstrate komposyn-lg v0.9.0 with core v0.8.0 and entirely synthetic Codex/Claude Code usage. They are intended for review and for Agent 1 to embed selected images in the repository README. This change deliberately does not modify the README or publish social-media content.
+These assets demonstrate komposyn-lg v0.9.0 with core v0.8.0 and entirely synthetic Codex/Claude Code usage. The README uses the real REPL walkthrough as its primary visual. The earlier shell/export recording remains supporting material for command-line reporting and exact JSON output.
 
 ## Reproduce the fixture and recording
 
@@ -12,7 +12,7 @@ Requirements to regenerate:
 
 - Linux/macOS shell, Python 3, and the signed v0.9.0 executable.
 - For stills and GIF: asciinema 3.2.1, agg 1.9.0, Pillow 10.2.0.
-- For a caption-burned MP4: ffmpeg built with libass/subtitles and an H.264 encoder. That encoder was unavailable in the capture environment, so no MP4 is claimed as delivered. The original 30-second asciicast and synchronized WebVTT captions are included; the GIF is a shortened looping visual preview, not a replacement for that narrated-duration recording.
+- For a caption-burned MP4: ffmpeg built with libass/subtitles and an H.264 encoder. That encoder was unavailable in the capture environment, so no MP4 is claimed as delivered. The original 30-second shell/export asciicast and synchronized WebVTT captions are included; its GIF is a shortened looping visual preview, not a replacement for that narrated-duration recording.
 
 After obtaining and verifying the release binary, run from a clean checkout:
 
@@ -27,6 +27,25 @@ After obtaining and verifying the release binary, run from a clean checkout:
 
 The fixture uses protocol-v1 synthetic records only, with fixed dates, three sessions across two named sample projects, two Codex/OpenAI requests and three Claude Code/Anthropic requests. It reads no provider directories and includes no prompts, responses, credentials, or real project paths. Claude records intentionally omit observed billing context, so their estimated cost remains unknown; the shown Codex amount is explicitly a public list-price estimate, not provider-reported cost. The checked-in JSON is the exact CLI JSON output for the fixed report range.
 
+## Reproduce the REPL walkthrough
+
+The README REPL capture is terminal input/output from the signed v0.9.0 binary against the isolated fixture above. It uses no provider directories, does not start a collector, and chooses the project and session by matching their rows in the displayed tables. The capture shows the overall report, project list, project summary, session list, and a selected session's model breakdown. Its final frame is the static README alternative.
+
+After creating a fresh dedicated work directory and seeding it as above, mark onboarding complete with collection disabled:
+
+    cat > /tmp/komposyn-demo-data/data/settings.json <<'EOF'
+    {"version":1,"onboarding_complete":true,"collector_enabled":false,"auto_start":false,"poll_interval_seconds":5,"poll_interval_millis":5000,"failure_mode":"non-blocking"}
+    EOF
+    chmod 600 /tmp/komposyn-demo-data/data/settings.json
+
+Record and render the actual interaction (the capture tool paths may differ by platform):
+
+    CLI_BIN="$CLI_BIN" TOKEN_LOGGER_DATA_DIR=/tmp/komposyn-demo-data/data asciinema record --headless --window-size 150x32 --title 'komposyn-lg interactive demo on synthetic fixture' --idle-time-limit 1 --return --command 'python3 docs/demo/record-repl-demo.py' /tmp/komposyn-demo-data/komposyn-lg-repl.cast
+    mkdir -m 700 /tmp/komposyn-demo-render
+    AGG_BIN=/path/to/agg docs/demo/render-repl-assets.sh /tmp/komposyn-demo-data/komposyn-lg-repl.cast /tmp/komposyn-demo-render
+
+The recording driver uses only Python's standard library. Rendering requires the same asciinema 3.2.1, agg 1.9.0, and Pillow 10.2.0 versions listed above. The REPL GIF is a short looping preview; the separate shell/export cast remains the 30.17-second recording paired with `captions.vtt`.
+
 Temporary data, harness responses, and generated recording renders are kept outside the repository. To clean up, remove only the dedicated directories created above after checking their exact paths:
 
     rm -r -- /tmp/komposyn-demo-data /tmp/komposyn-demo-render
@@ -37,6 +56,6 @@ See [asset-manifest.md](asset-manifest.md) for individual sizes, captions, alter
 
 ## Validation and release note
 
-The fixture was seeded and queried with the signed binary; its totals and cost coverage were checked against the generated JSON. The capture covers overall usage, project navigation, sessions, model grouping, pricing coverage, and exact JSON export. Full-width screenshots are readable at normal desktop README scale; at phone width terminal text becomes too small to read without zoom. Use the captions/alt text and retain the source cast for accessible text review rather than shrinking the stills further.
+The fixture was seeded and queried with the signed binary; its totals and cost coverage were checked against the generated JSON. The shell/export capture covers overall usage, project navigation, sessions, model grouping, pricing coverage, and exact JSON export. The REPL capture shows actual table-driven project/session navigation and selected-session model grouping. Full-width terminal visuals are readable at normal desktop README scale; at phone width text is too small to read without zoom. Use descriptive alt text and retain both source casts for accessible text review rather than shrinking the visuals further.
 
 At capture time, the target repository's SECURITY.md still described v0.8.1 as its latest release; the GitHub release page and verified signed artifacts show v0.9.0. This documentation records the artifact actually used and does not change that unrelated repository file.
