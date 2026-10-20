@@ -22,13 +22,22 @@ fi
 
 scene() {
   local title="$1"
+  local display_cli="komposyn-lg"
   shift
   printf '\033[2J\033[H'
   printf 'SYNTHETIC EXAMPLE DATA  ·  %s\n\n' "$title"
-  printf '$'
-  printf ' %q' "$@"
-  printf '\n'
-  "$@"
+  if [[ "$1" == "$cli_bin" ]]; then
+    shift
+    printf '$ %s' "$display_cli"
+    printf ' %q' "$@"
+    printf '\n'
+    "$cli_bin" "$@"
+  else
+    printf '$'
+    printf ' %q' "$@"
+    printf '\n'
+    "$@"
+  fi
 }
 
 scene "Overall usage" "$cli_bin" usage --from "$from_date" --to "$to_date" --format table

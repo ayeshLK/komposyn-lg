@@ -17,12 +17,13 @@ Requirements to regenerate:
 After obtaining and verifying the release binary, run from a clean checkout:
 
     mkdir -m 700 /tmp/komposyn-demo-data
-    docs/demo/seed-demo.sh /path/to/komposyn-lg /tmp/komposyn-demo-data
+    export CLI_BIN=/path/to/komposyn-lg
+    docs/demo/seed-demo.sh "$CLI_BIN" /tmp/komposyn-demo-data
     export TOKEN_LOGGER_DATA_DIR=/tmp/komposyn-demo-data/data
     export DEMO_EXPORT_PATH=/tmp/komposyn-demo-data/usage.json
-    asciinema rec --title 'KompoSyn Token Logger — synthetic example data' --cols 110 --rows 45 docs/demo/assets/komposyn-lg-demo.cast --command 'bash docs/demo/record-demo-session.sh'
+    asciinema rec --title 'KompoSyn Token Logger — synthetic example data' --cols 110 --rows 45 /tmp/komposyn-demo-data/komposyn-lg-demo.cast --command 'bash docs/demo/record-demo-session.sh'
     mkdir -m 700 /tmp/komposyn-demo-render
-    docs/demo/render-assets.sh docs/demo/assets/komposyn-lg-demo.cast /tmp/komposyn-demo-render
+    docs/demo/render-assets.sh /tmp/komposyn-demo-data/komposyn-lg-demo.cast /tmp/komposyn-demo-render
 
 The fixture uses protocol-v1 synthetic records only, with fixed dates, three sessions across two named sample projects, two Codex/OpenAI requests and three Claude Code/Anthropic requests. It reads no provider directories and includes no prompts, responses, credentials, or real project paths. Claude records intentionally omit observed billing context, so their estimated cost remains unknown; the shown Codex amount is explicitly a public list-price estimate, not provider-reported cost. The checked-in JSON is the exact CLI JSON output for the fixed report range.
 

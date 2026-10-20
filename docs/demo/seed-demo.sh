@@ -34,12 +34,21 @@ data_dir="$work_dir/data"
 mkdir -m 700 -- "$data_dir"
 python3 "$script_dir/generate-fixture.py" "$data_dir" | "$cli" harness > "$work_dir/harness-responses.jsonl"
 
-if ! rg -q '"id":"shutdown".*"stopped":true' "$work_dir/harness-responses.jsonl"; then
-  echo "harness did not complete shutdown; inspect $work_dir/harness-responses.jsonl" >&2
-  exit 1
-fi
-if rg -q '"ok":false' "$work_dir/harness-responses.jsonl"; then
-  echo "harness rejected the synthetic fixture; inspect $work_dir/harness-responses.jsonl" >&2
-  exit 1
-fi
+python3 - "$work_dir/harness-responses.jsonl" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+try:
+    with open(path, encoding="utf-8") as stream:
+        responses = [json.loads(line) for line in stream if line.strip()]
+except (OSError, json.JSONDecodeError) as error:
+    raise SystemExit(f"invalid harness response JSONL: {error}")
+
+if not responses or any(response.get("ok") is not True for response in responses):
+    raise SystemExit(f"harness rejected the synthetic fixture; inspect {path}")
+shutdown = responses[-1]
+if shutdown.get("id") != "shutdown" or shutdown.get("result", {}).get("stopped") is not True:
+    raise SystemExit(f"harness did not complete shutdown; inspect {path}")
+PY
 printf 'Synthetic demo fixture loaded.\nData: %s\nResponses: %s\n' "$data_dir" "$work_dir/harness-responses.jsonl"
