@@ -1,0 +1,19 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:05.000
+Synthetic example data combines Codex and Claude Code usage. The displayed estimate is a public list-price calculation; provider-reported cost is not present.
+
+00:00:05.000 --> 00:00:10.000
+Browse two clearly synthetic projects and their usage totals.
+
+00:00:10.000 --> 00:00:15.000
+Select Ledger Studio to inspect the separate Codex and Claude Code sessions.
+
+00:00:15.000 --> 00:00:20.000
+Open a Codex session and inspect its exact model usage and estimate.
+
+00:00:20.000 --> 00:00:25.000
+Cost coverage keeps the Claude estimate unknown because this synthetic fixture omits billing context.
+
+00:00:25.000 --> 00:00:31.000
+Export exact JSON. Summary values: input_tokens 335000, calculated_cost_micros 346250, unknown_cost_requests 3.
