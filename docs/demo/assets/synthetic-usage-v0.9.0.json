@@ -1,0 +1,95 @@
+{
+  "from": "2026-10-18T00:00:00Z",
+  "to": "2026-10-21T00:00:00Z",
+  "timezone": "UTC",
+  "filters": {
+    "from": "2026-10-18T00:00:00Z",
+    "to": "2026-10-21T00:00:00Z",
+    "group_by": [
+      "client",
+      "provider",
+      "model"
+    ]
+  },
+  "summary": {
+    "request_count": 5,
+    "session_count": 3,
+    "input_tokens": 335000,
+    "cached_input_tokens": 162000,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 30900,
+    "reasoning_output_tokens": 7000,
+    "total_tokens": 365900,
+    "calculated_cost_micros": 346250,
+    "calculated_currency": "USD",
+    "provider_reported_cost_micros": 0,
+    "unknown_cost_requests": 3,
+    "estimated_cost_requests": 2,
+    "known_zero_cost_requests": 0,
+    "cost_unknown_reason": "billing_context_missing",
+    "cost_unknown_reasons": {
+      "billing_context_missing": 3
+    },
+    "pricing_provider": "mixed",
+    "calculation_basis": "mixed",
+    "pricing_version": "public-api-2026-10-14-v1",
+    "pricing_source": "https://developers.openai.com/api/docs/models/gpt-5-codex",
+    "pricing_model_selector": "gpt-5-codex",
+    "pricing_effective_from": "2026-10-14T00:00:00.000000000Z"
+  },
+  "rows": [
+    {
+      "dimensions": {
+        "client": "claude-code",
+        "model": "claude-sonnet-5-5",
+        "provider": "anthropic"
+      },
+      "request_count": 3,
+      "session_count": 2,
+      "input_tokens": 135000,
+      "cached_input_tokens": 52000,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 8900,
+      "reasoning_output_tokens": 0,
+      "total_tokens": 143900,
+      "calculated_cost_micros": 0,
+      "provider_reported_cost_micros": 0,
+      "unknown_cost_requests": 3,
+      "estimated_cost_requests": 0,
+      "known_zero_cost_requests": 0,
+      "cost_unknown_reason": "billing_context_missing",
+      "cost_unknown_reasons": {
+        "billing_context_missing": 3
+      },
+      "pricing_provider": "anthropic",
+      "calculation_basis": "unavailable"
+    },
+    {
+      "dimensions": {
+        "client": "codex-cli",
+        "model": "gpt-5-codex",
+        "provider": "openai"
+      },
+      "request_count": 2,
+      "session_count": 1,
+      "input_tokens": 200000,
+      "cached_input_tokens": 110000,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 22000,
+      "reasoning_output_tokens": 7000,
+      "total_tokens": 222000,
+      "calculated_cost_micros": 346250,
+      "calculated_currency": "USD",
+      "provider_reported_cost_micros": 0,
+      "unknown_cost_requests": 0,
+      "estimated_cost_requests": 2,
+      "known_zero_cost_requests": 0,
+      "pricing_provider": "openai",
+      "calculation_basis": "public_catalog_estimate",
+      "pricing_version": "public-api-2026-10-14-v1",
+      "pricing_source": "https://developers.openai.com/api/docs/models/gpt-5-codex",
+      "pricing_model_selector": "gpt-5-codex",
+      "pricing_effective_from": "2026-10-14T00:00:00.000000000Z"
+    }
+  ]
+}
