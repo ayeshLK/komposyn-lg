@@ -20,6 +20,7 @@ installer-trust:
 
 release-provenance:
 	bash scripts/test-release-provenance.sh
+	bash scripts/test-release-version-flow.sh
 
 release-executable-copy:
 	bash scripts/test-copy-release-executable.sh
