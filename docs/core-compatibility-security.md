@@ -2,16 +2,17 @@
 
 The CLI is independently versioned and pins a specific core module in `go.mod`.
 The standalone executable and core library are versioned independently. The
-published CLI v0.8.1 pins core v0.7.1. The next CLI release candidate raises
-the minimum supported core and pin together to v0.8.0:
+published CLI v0.8.1 pins core v0.7.1, and CLI v0.9.0 pins core v0.8.0. The
+next CLI release candidate raises the minimum supported core and pin together
+to v0.9.0:
 
-| Compatibility value | CLI v0.8.0 | CLI v0.8.1 | Next release candidate |
-| --- | --- | --- |
-| Minimum supported core | `v0.7.0` | `v0.7.1` | `v0.8.0` |
-| Pinned core | `v0.7.0` | `v0.7.1` | `v0.8.0` |
+| Compatibility value | CLI v0.8.0 | CLI v0.8.1 | CLI v0.9.0 | Next release candidate |
+| --- | --- | --- | --- | --- |
+| Minimum supported core | `v0.7.0` | `v0.7.1` | `v0.8.0` | `v0.9.0` |
+| Pinned core | `v0.7.0` | `v0.7.1` | `v0.8.0` | `v0.9.0` |
 
 The standalone security support policy is latest-published-release only. At
-the time of this policy, `v0.8.1` is supported; a newer published CLI release
+the time of this update, `v0.9.0` is supported; a newer published CLI release
 supersedes it and older CLI releases receive no further security fixes. The
 `master` branch is the development source for the next signed release, not an
 independently supported binary line. See [the standalone security policy](../SECURITY.md).
@@ -40,12 +41,13 @@ Dependabot may propose core dependency updates. Review each update for:
    compatibility job must pass before the core change merges.
 
 The CLI CI tests the pinned core version. The minimum supported version and
-pin for the next release candidate are both `v0.8.0`; if they diverge later,
+pin for the next release candidate are both `v0.9.0`; if they diverge later,
 add explicit CLI CI coverage for both before documenting the expanded support
-range. Core v0.8.0 advances SQLite schema 15 to 16 to add private parser
-checkpoints. The migration is forward-only, keeps bounded normalized parser
-state rather than provider source text, and creates a verified pre-migration
-backup. The CLI upgrade guidance describes recovery and older-binary refusal.
+range. Core v0.8.0 advanced SQLite schema 15 to 16 to add private parser
+checkpoints. Core v0.9.0 advances schema 16 to 17 to record project-name origin;
+historical origins remain unknown. These forward-only migrations create a
+verified pre-migration backup. The CLI upgrade guidance describes recovery and
+older-binary refusal.
 Never commit a `replace` directive; candidate overrides exist only in
 disposable CI or measurement worktrees.
 

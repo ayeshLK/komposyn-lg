@@ -757,9 +757,11 @@ func TestImportJSONOutcomeContract(t *testing.T) {
 }
 
 func TestImportWarningAndPendingExitBehavior(t *testing.T) {
+	const codexMetadata = `{"type":"session_meta","payload":{"id":"synthetic-session","project_id":"synthetic-project","cwd":"/synthetic/project","model":"gpt-test"}}` + "\n"
 	t.Run("unsupported usage warns", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "unsupported.jsonl")
-		if err := os.WriteFile(path, []byte(`{"type":"token_usage_record","timestamp":"2026-10-11T00:00:00Z","input_tokens":1}`+"\n"), 0o600); err != nil {
+		contents := codexMetadata + `{"type":"token_usage_record","timestamp":"2026-10-11T00:00:00Z","input_tokens":1}` + "\n"
+		if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		var stdout, stderr bytes.Buffer
@@ -777,7 +779,7 @@ func TestImportWarningAndPendingExitBehavior(t *testing.T) {
 
 	t.Run("incomplete final line remains retryable", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "partial.jsonl")
-		if err := os.WriteFile(path, []byte(`{"type":"token_count","payload":`), 0o600); err != nil {
+		if err := os.WriteFile(path, []byte(codexMetadata+`{"type":"token_count","payload":`), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		var stdout, stderr bytes.Buffer
@@ -795,10 +797,11 @@ func TestImportWarningAndPendingExitBehavior(t *testing.T) {
 
 	t.Run("warning and pending remain independent in text", func(t *testing.T) {
 		sourceDir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(sourceDir, "unsupported.jsonl"), []byte(`{"type":"token_usage_record","input_tokens":1}`+"\n"), 0o600); err != nil {
+		unsupported := codexMetadata + `{"type":"token_usage_record","input_tokens":1}` + "\n"
+		if err := os.WriteFile(filepath.Join(sourceDir, "unsupported.jsonl"), []byte(unsupported), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(sourceDir, "partial.jsonl"), []byte(`{"type":"token_count","payload":`), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(sourceDir, "partial.jsonl"), []byte(codexMetadata+`{"type":"token_count","payload":`), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		var stdout, stderr bytes.Buffer
@@ -1245,6 +1248,9 @@ func TestProjectAndSessionResourceCommands(t *testing.T) {
 	if !strings.Contains(projectsOut.String(), `"format_version": 1`) || !strings.Contains(projectsOut.String(), `"display_name": "Readable Project"`) || !strings.Contains(projectsOut.String(), `"request_count": 1`) || !strings.Contains(projectsOut.String(), `"total_tokens": 1000000`) {
 		t.Fatalf("unexpected projects JSON: %s", projectsOut.String())
 	}
+	if strings.Contains(projectsOut.String(), projectInventoryNote) {
+		t.Fatalf("human inventory explanation changed project JSON output: %s", projectsOut.String())
+	}
 	var projectsCSVOut, projectsCSVErr bytes.Buffer
 	if code := run([]string{"projects", "list", "--data-dir", dataDir, "--format", "csv"}, &projectsCSVOut, &projectsCSVErr); code != 0 {
 		t.Fatalf("projects list CSV exit=%d stderr=%q", code, projectsCSVErr.String())
@@ -1255,6 +1261,9 @@ func TestProjectAndSessionResourceCommands(t *testing.T) {
 	}
 	if len(projectRecords) != 2 || projectRecords[0][0] != "format_version" || projectRecords[0][1] != "project_id" || projectRecords[1][0] != "1" || projectRecords[1][1] != "local-project" || !reflect.DeepEqual(projectRecords[1][10:16], []string{"600000", "120000", "30000", "400000", "250000", "1000000"}) {
 		t.Fatalf("unexpected project-list CSV: %#v", projectRecords)
+	}
+	if strings.Contains(projectsCSVOut.String(), projectInventoryNote) {
+		t.Fatalf("human inventory explanation changed project CSV output: %s", projectsCSVOut.String())
 	}
 
 	var sessionsOut, sessionsErr bytes.Buffer

@@ -5,7 +5,7 @@ dist_dir="${1:?usage: verify-release.sh <release-dir> [verified-reference-binary
 reference_binary="${2:-}"
 expected_target="${3:-}"
 expected_schema_transition="${4:-}"
-expected_candidate_schema=16
+expected_candidate_schema=17
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 version="$(sed -n 's/^# version=//p' "$dist_dir/SHA256SUMS" | head -1)"
 if [[ -z "$version" ]]; then
@@ -235,7 +235,7 @@ try:
     version = db.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
 finally:
     db.close()
-if integrity != "ok" or (source, target, version) != (15, 16, 15):
+if integrity != "ok" or (source, target, version) != (15, 17, 15):
     raise SystemExit(f"failed-migration backup metadata/integrity mismatch: {integrity}, {source}->{target}, schema={version}")
 PY
     recovery_dir="$tmp_dir/migration-failure-recovery"
@@ -428,10 +428,10 @@ PY
       echo "compatible reference binary could not read the restored pre-migration backup" >&2
       exit 1
     }
-    if [[ "$expected_schema_transition" == "15:16" ]]; then
+    if [[ "$expected_schema_transition" == "15:17" ]]; then
       restored_schema="$(database_schema_version "$recovery_dir/token-logger.db")"
       [[ "$restored_schema" == 15 ]] || { echo "restored backup schema is $restored_schema; expected 15" >&2; exit 1; }
-      # The shipped v0.8.1 binary must refuse the schema-16 database without
+      # The shipped v0.8.1 binary must refuse the schema-17 database without
       # changing the database or creating/removing SQLite sidecars.
       refusal_before="$(python3 - "$data_dir/token-logger.db" <<'PY'
 import hashlib
@@ -449,11 +449,11 @@ PY
         refusal_data_dir="$(cygpath -w "$data_dir")"
       fi
       if TOKEN_LOGGER_DATA_DIR="$refusal_data_dir" "$reference_binary" usage --format json >"$tmp_dir/old-schema-refusal.txt" 2>&1; then
-        echo "CLI v0.8.1 unexpectedly opened the schema-16 database" >&2
+        echo "CLI v0.8.1 unexpectedly opened the schema-17 database" >&2
         exit 1
       fi
       grep -Fq 'newer than supported version' "$tmp_dir/old-schema-refusal.txt" || {
-        echo "CLI v0.8.1 failed for an unexpected reason instead of refusing schema 16: $(cat "$tmp_dir/old-schema-refusal.txt")" >&2
+        echo "CLI v0.8.1 failed for an unexpected reason instead of refusing schema 17: $(cat "$tmp_dir/old-schema-refusal.txt")" >&2
         exit 1
       }
       refusal_after="$(python3 - "$data_dir/token-logger.db" <<'PY'
@@ -468,7 +468,7 @@ for suffix in ("", "-wal", "-shm"):
 PY
 )"
       [[ "$refusal_after" == "$refusal_before" ]] || {
-        echo "CLI v0.8.1 refusal changed schema-16 database/sidecars: before=$refusal_before after=$refusal_after" >&2
+        echo "CLI v0.8.1 refusal changed schema-17 database/sidecars: before=$refusal_before after=$refusal_after" >&2
         exit 1
       }
       cat >>"$source_dir/codex.jsonl" <<'EOF'
@@ -541,13 +541,17 @@ protocol_output="$(printf '%s\n' '{"protocol":"komposyn.token-logger","version":
   echo "standalone runtime protocol v1 smoke failed: $protocol_output" >&2
   exit 1
 }
-python3 - "$refusal_dir/token-logger.db" <<'PY'
+python3 - "$refusal_dir/token-logger.db" "$expected_candidate_schema" <<'PY'
 import sqlite3
 import sys
 
 connection = sqlite3.connect(sys.argv[1])
 try:
-    connection.execute("UPDATE schema_migrations SET version = 17 WHERE version = (SELECT MAX(version) FROM schema_migrations)")
+    current = int(connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0])
+    expected = int(sys.argv[2])
+    if current != expected:
+        raise SystemExit(f"fresh refusal fixture schema is {current}; expected {expected}")
+    connection.execute("UPDATE schema_migrations SET version = ? WHERE version = ?", (current + 1, current))
     connection.commit()
 finally:
     connection.close()

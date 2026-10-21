@@ -67,6 +67,47 @@ waiting for its first result.
 `/refresh` redraws committed database data only. Use foreground `watch` when an
 explicit source scan is needed, and ensure it uses the same data directory.
 
+## A project shows zero usage or an `Unattributed` name
+
+`/projects` and `projects list` show all known projects. Their usage totals,
+usage-derived session counts, and last-active values use the selected report
+range. A zero can mean activity is outside that range; it does not by itself
+show lifetime inactivity, missing tokens, or an import failure. `WARNINGS`
+counts reconciliation warnings, not all collector/parser outcomes. Stopped
+collection also means no new source evidence is being collected until a later
+scan; it does not erase persisted activity. Keep legitimate metadata-only
+sessions even when no accepted usage event represents them.
+
+From the REPL, inspect a row in the currently displayed project list with
+`/projects inspect 1`, or use its full stable ID with
+`/projects inspect <project-id>`. The row form never reloads the inventory and
+uses the range snapshot that produced the visible list. Non-interactively,
+inspect using:
+
+```sh
+komposyn-lg projects inspect <project-id> --from 2020-01-01 --to 2027-01-01
+komposyn-lg projects inspect <project-id> --limit 10 --offset 20 --format json
+```
+
+Selected-range activity is shown separately from all currently persisted
+historical activity. Stored sessions are distinct from sessions represented by
+usage. Evidence pages include location/alias/warning/source digests, safe
+provenance labels, page totals, and `next_offset`; repeat the same project,
+range, and data directory with that offset to fetch another page. Pages are
+separate snapshots and concurrent imports may change later offsets. The
+recovery classification is advisory. Unknown historical name origin remains
+unavailable: a display label, adapter, or project location does not prove how
+an old name was chosen. A provisional/fallback label may remain after upgrade;
+upgrading does not promise that every historical label is repaired.
+
+Inspection does not scan provider files, start a collector, change the range,
+repair identity, or use the network. Opening the store can still apply its
+existing migrations and synchronize its embedded pricing catalog. Digests and
+exact activity values may identify local data; inspection JSON is not
+automatically safe to publish. This command requires KompoSyn core v0.9.0 or
+newer; the CLI's minimum supported core floor and dependency pin are both
+v0.9.0. A local candidate override is not release validation.
+
 ## Background collector is stopped or stale
 
 Run `komposyn-lg watch status --format json` with the same data directory used

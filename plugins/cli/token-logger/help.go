@@ -43,7 +43,7 @@ First run:
 Commands:
   import          Import Codex or Claude Code transcript files
   usage, cost     Report token usage and cost estimates
-  projects        List or show project resources
+  projects        List, show, or inspect project resources
   sessions        Report sessions, or list/show session resources
   watch           Register sources and run foreground or detached collection
   settings        Set embedded collector preferences
@@ -137,10 +137,16 @@ Example:
 	"projects": `Usage:
   komposyn-lg projects list [--from <time>] [--to <time>] [--data-dir <path>] [--format table|json|csv]
   komposyn-lg projects show <project-id> [--from <time>] [--to <time>] [--data-dir <path>] [--format table|json]
+  komposyn-lg projects inspect <project-id> [--from <time>] [--to <time>]
+    [--data-dir <path>] [--limit <1-50>] [--offset <0-100000>] [--format json]
 
 Project ranges default to the previous seven days ending now. List accepts
-table, JSON, or CSV; show accepts table or JSON. IDs are stable IDs, not row
-numbers. Exit status: 0 success, 1 invalid arguments, 2 database/output error.
+table, JSON, or CSV; show accepts table or JSON; inspect defaults to human text
+and accepts JSON. IDs are stable IDs, not row numbers. Inspection JSON is the
+versioned core evidence response; bounded pages can be continued with each
+page's next_offset. Digests and exact metrics may identify data; do not assume
+inspection output is safe to publish. Exit status: 0 success, 1 invalid
+arguments, 2 database/output error.
 
 Example:
   komposyn-lg projects list --format json
@@ -149,7 +155,10 @@ Example:
   komposyn-lg projects list [--from <date|RFC3339>] [--to <date|RFC3339>]
     [--data-dir <path>] [--format table|json|csv]
 
-Shows projects active in the range (default: previous seven days to now).
+Shows all known projects. Usage totals, usage-derived session counts, and last
+active values reflect the selected range (default: previous seven days to now).
+WARNINGS counts reconciliation warnings, not all collection/parser failures.
+A zero-usage row does not establish lifetime inactivity or token loss.
 Exit status: 0 success, 1 invalid arguments, 2 database/output error.
 `,
 	"projects show": `Usage:
@@ -159,6 +168,23 @@ Exit status: 0 success, 1 invalid arguments, 2 database/output error.
 Shows one stable project ID and its summary. Range defaults to the previous
 seven days ending now. Exit status: 0 success, 1 invalid arguments, 2 database
 or output error.
+`,
+	"projects inspect": `Usage:
+  komposyn-lg projects inspect <project-id> [--from <date|RFC3339>]
+    [--to <date|RFC3339>] [--data-dir <path>] [--limit <1-50>]
+    [--offset <0-100000>] [--format json]
+
+Inspects stored project attribution and activity evidence without scanning
+provider files or starting collection. Range defaults to the previous seven
+days ending now; historical activity means persisted events only. Locations,
+aliases, warnings, and source evidence use digest/projection fields. Unknown
+name provenance stays unavailable; recovery classification is advisory.
+Limit and offset apply to each evidence collection. Continue with next_offset;
+truncated pages cannot be advanced beyond the core offset limit. Metadata-only
+sessions remain valid, and old names are not necessarily repairable. JSON and
+exact metrics may identify data; inspect locally before sharing. Store.Open
+may still perform its existing migration or catalog synchronization. This
+command requires a released core containing project inspection.
 `,
 	"sessions": `Usage:
   komposyn-lg sessions [report options]
@@ -317,7 +343,7 @@ func helpTargetFromCommand(args []string) []string {
 		subcommand := args[1]
 		switch command {
 		case "projects":
-			if subcommand == "list" || subcommand == "show" {
+			if subcommand == "list" || subcommand == "show" || subcommand == "inspect" {
 				return []string{command, subcommand}
 			}
 		case "sessions":
@@ -404,11 +430,12 @@ _komposyn_lg() {
   elif [[ "$cmd" == "help" && ${COMP_CWORD} -eq 3 ]]; then
     case "${COMP_WORDS[2]}" in
       watch) COMPREPLY=( $(compgen -W "add remove list start status stop foreground" -- "$cur") ) ;;
-      projects|sessions) COMPREPLY=( $(compgen -W "list show" -- "$cur") ) ;;
+      projects) COMPREPLY=( $(compgen -W "list show inspect" -- "$cur") ) ;;
+      sessions) COMPREPLY=( $(compgen -W "list show" -- "$cur") ) ;;
       *) COMPREPLY=( $(compgen -W "--help -h" -- "$cur") ) ;;
     esac
   elif [[ "$cmd" == "projects" && ${COMP_CWORD} -eq 2 ]]; then
-    if [[ "$cur" == -* ]]; then COMPREPLY=( $(compgen -W "--help -h" -- "$cur") ); else COMPREPLY=( $(compgen -W "list show" -- "$cur") ); fi
+    if [[ "$cur" == -* ]]; then COMPREPLY=( $(compgen -W "--help -h" -- "$cur") ); else COMPREPLY=( $(compgen -W "list show inspect" -- "$cur") ); fi
   elif [[ "$cmd" == "sessions" && ${COMP_CWORD} -eq 2 ]]; then
     if [[ "$cur" == -* ]]; then
       COMPREPLY=( $(compgen -W "--help -h --data-dir --format --from --to --project --session --client --provider --model --group-by --timezone" -- "$cur") )
@@ -426,6 +453,7 @@ _komposyn_lg() {
       usage:*|cost:*|sessions:*) formats="table json csv" ;;
       projects:list) formats="table json csv" ;;
       projects:show) formats="table json" ;;
+      projects:inspect) formats="text json" ;;
       watch:list|watch:status) formats="text json" ;;
       *) formats="" ;;
     esac
@@ -438,6 +466,7 @@ _komposyn_lg() {
       usage:*|cost:*|sessions:) options="--help -h --data-dir --format --from --to --project --session --client --provider --model --group-by --timezone" ;;
       projects:list) options="--help -h --data-dir --format --from --to --client --provider --model" ;;
       projects:show) options="--help -h --data-dir --format --from --to --client --provider --model" ;;
+      projects:inspect) options="--help -h --data-dir --format --from --to --limit --offset" ;;
       sessions:list) options="--help -h --data-dir --format --from --to --project --client --provider --model" ;;
       sessions:show) options="--help -h --data-dir --format --from --to --project --client --provider --model --group-by" ;;
       watch:add) options="--help -h --data-dir --defaults" ;;
@@ -499,10 +528,12 @@ _komposyn-lg() {
     if [[ ${words[CURRENT]} == -* ]]; then compadd -- --help -h; else compadd help version import usage cost projects sessions watch settings report-issue harness completion; fi
   elif [[ ${words[2]} == help && ${words[3]} == watch ]] && (( CURRENT == 4 )); then
     if [[ ${words[CURRENT]} == -* ]]; then compadd -- --help -h; else compadd add remove list start status stop foreground; fi
-  elif [[ ${words[2]} == help && ( ${words[3]} == projects || ${words[3]} == sessions ) ]] && (( CURRENT == 4 )); then
+  elif [[ ${words[2]} == help && ${words[3]} == projects ]] && (( CURRENT == 4 )); then
+    if [[ ${words[CURRENT]} == -* ]]; then compadd -- --help -h; else compadd list show inspect; fi
+  elif [[ ${words[2]} == help && ${words[3]} == sessions ]] && (( CURRENT == 4 )); then
     if [[ ${words[CURRENT]} == -* ]]; then compadd -- --help -h; else compadd list show; fi
   elif [[ ${words[2]} == projects ]] && (( CURRENT == 3 )); then
-    if [[ ${words[CURRENT]} == -* ]]; then compadd -- --help -h; else compadd list show; fi
+    if [[ ${words[CURRENT]} == -* ]]; then compadd -- --help -h; else compadd list show inspect; fi
   elif [[ ${words[2]} == sessions ]] && (( CURRENT == 3 )); then
     if [[ ${words[CURRENT]} == -* ]]; then compadd -- --help -h --data-dir --format --from --to --project --session --client --provider --model --group-by --timezone; else compadd list show; fi
   elif [[ ${words[2]} == completion ]] && (( CURRENT == 3 )); then
@@ -513,17 +544,19 @@ _komposyn-lg() {
       usage:*|cost:*|sessions:*) compadd table json csv ;;
       projects:list) compadd table json csv ;;
       projects:show) compadd table json ;;
+      projects:inspect) compadd text json ;;
       watch:list|watch:status) compadd text json ;;
     esac
   elif [[ ${words[CURRENT-1]} == --collector || ${words[CURRENT-1]} == --auto-start ]]; then
     compadd on off
-  elif [[ ${words[CURRENT-1]} == --data-dir || ${words[CURRENT-1]} == --from || ${words[CURRENT-1]} == --to || ${words[CURRENT-1]} == --project || ${words[CURRENT-1]} == --session || ${words[CURRENT-1]} == --client || ${words[CURRENT-1]} == --provider || ${words[CURRENT-1]} == --model || ${words[CURRENT-1]} == --group-by || ${words[CURRENT-1]} == --timezone || ${words[CURRENT-1]} == --interval || ${words[CURRENT-1]} == --timeout || ${words[CURRENT-1]} == --output ]]; then
+  elif [[ ${words[CURRENT-1]} == --data-dir || ${words[CURRENT-1]} == --from || ${words[CURRENT-1]} == --to || ${words[CURRENT-1]} == --limit || ${words[CURRENT-1]} == --offset || ${words[CURRENT-1]} == --project || ${words[CURRENT-1]} == --session || ${words[CURRENT-1]} == --client || ${words[CURRENT-1]} == --provider || ${words[CURRENT-1]} == --model || ${words[CURRENT-1]} == --group-by || ${words[CURRENT-1]} == --timezone || ${words[CURRENT-1]} == --interval || ${words[CURRENT-1]} == --timeout || ${words[CURRENT-1]} == --output ]]; then
     return
   else
     case "$command:$subcommand" in
       import:*) compadd -- --help -h --data-dir --format ;;
       usage:*|cost:*|sessions:) compadd -- --help -h --data-dir --format --from --to --project --session --client --provider --model --group-by --timezone ;;
       projects:list|projects:show) compadd -- --help -h --data-dir --format --from --to --client --provider --model ;;
+      projects:inspect) compadd -- --help -h --data-dir --format --from --to --limit --offset ;;
       sessions:list) compadd -- --help -h --data-dir --format --from --to --project --client --provider --model ;;
       sessions:show) compadd -- --help -h --data-dir --format --from --to --project --client --provider --model --group-by ;;
       watch:add) compadd -- --help -h --data-dir --defaults ;;
@@ -544,7 +577,8 @@ const fishCompletion = `# komposyn-lg completion for Fish
 complete -c komposyn-lg -f -n '__fish_use_subcommand' -a 'help version import usage cost projects sessions watch settings report-issue harness completion'
 complete -c komposyn-lg -f -n '__fish_seen_subcommand_from help; and not __fish_seen_subcommand_from version import usage cost projects sessions watch settings report-issue harness completion' -a 'help version import usage cost projects sessions watch settings report-issue harness completion'
 complete -c komposyn-lg -f -n '__fish_seen_subcommand_from watch; and not __fish_seen_subcommand_from add remove list start status stop foreground' -a 'add remove list start status stop foreground'
-complete -c komposyn-lg -f -n '__fish_seen_subcommand_from projects sessions; and not __fish_seen_subcommand_from list show' -a 'list show'
+complete -c komposyn-lg -f -n '__fish_seen_subcommand_from projects; and not __fish_seen_subcommand_from list show inspect' -a 'list show inspect'
+complete -c komposyn-lg -f -n '__fish_seen_subcommand_from sessions; and not __fish_seen_subcommand_from list show' -a 'list show'
 complete -c komposyn-lg -f -n '__fish_seen_subcommand_from completion' -a 'bash zsh fish powershell'
 complete -c komposyn-lg -l help -s h -d 'Show help'
 complete -c komposyn-lg -l version -n '__fish_use_subcommand' -d 'Print version'
@@ -554,6 +588,9 @@ complete -c komposyn-lg -l format -r -a 'text json' -n '__fish_seen_subcommand_f
 complete -c komposyn-lg -l format -r -a 'table json csv' -n '__fish_seen_subcommand_from usage cost sessions' -d 'Report format'
 complete -c komposyn-lg -l format -r -a 'table json csv' -n '__fish_seen_subcommand_from projects; and __fish_seen_subcommand_from list' -d 'Project list format'
 complete -c komposyn-lg -l format -r -a 'table json' -n '__fish_seen_subcommand_from projects; and __fish_seen_subcommand_from show' -d 'Project detail format'
+complete -c komposyn-lg -l format -r -a 'text json' -n '__fish_seen_subcommand_from projects; and __fish_seen_subcommand_from inspect' -d 'Project inspection format'
+complete -c komposyn-lg -l limit -r -n '__fish_seen_subcommand_from projects; and __fish_seen_subcommand_from inspect' -d 'Evidence page size (1–50)'
+complete -c komposyn-lg -l offset -r -n '__fish_seen_subcommand_from projects; and __fish_seen_subcommand_from inspect' -d 'Evidence page offset (0–100000)'
 complete -c komposyn-lg -l format -r -a 'table json csv' -n '__fish_seen_subcommand_from sessions; and __fish_seen_subcommand_from list show' -d 'Session format'
 complete -c komposyn-lg -l format -r -a 'table json csv' -n '__fish_seen_subcommand_from sessions; and __fish_seen_subcommand_from show' -d 'Session detail format'
 complete -c komposyn-lg -l format -r -a 'text json' -n '__fish_seen_subcommand_from watch; and __fish_seen_subcommand_from list status' -d 'Watch output format'
@@ -588,6 +625,7 @@ Register-ArgumentCompleter -Native -CommandName komposyn-lg,komposyn-lg.exe -Scr
   $commands = @('help','version','import','usage','cost','projects','sessions','watch','settings','report-issue','harness','completion')
   $watch = @('add','remove','list','start','status','stop','foreground')
   $resources = @('list','show')
+  $projectResources = @('list','show','inspect')
   $elements = [System.Collections.Generic.List[string]]::new()
   foreach ($element in $words) { $elements.Add($element) }
   if ($wordToComplete -and $elements.Count -gt 1 -and $elements[$elements.Count - 1] -eq $wordToComplete) { $elements.RemoveAt($elements.Count - 1) }
@@ -602,18 +640,20 @@ Register-ArgumentCompleter -Native -CommandName komposyn-lg,komposyn-lg.exe -Scr
       { $_ -like 'usage:*' -or $_ -like 'cost:*' -or $_ -like 'sessions:*' } { $candidates = @('table','json','csv'); break }
       'projects:list' { $candidates = @('table','json','csv'); break }
       'projects:show' { $candidates = @('table','json'); break }
+      'projects:inspect' { $candidates = @('text','json'); break }
       { $_ -eq 'watch:list' -or $_ -eq 'watch:status' } { $candidates = @('text','json'); break }
       default { $candidates = @() }
     }
   }
   elseif ($previous -eq '--collector' -or $previous -eq '--auto-start') { $candidates = @('on','off') }
-  elseif ($previous -in @('--data-dir','--from','--to','--project','--session','--client','--provider','--model','--group-by','--timezone','--interval','--timeout','--output')) { $candidates = @() }
+  elseif ($previous -in @('--data-dir','--from','--to','--limit','--offset','--project','--session','--client','--provider','--model','--group-by','--timezone','--interval','--timeout','--output')) { $candidates = @() }
   elseif ($command -eq 'help' -and $elements.Count -eq 2) {
     if ($wordToComplete -like '-*') { $candidates = @('--help','-h') }
     else { $candidates = $commands }
   }
   elseif ($command -eq 'help' -and $elements.Count -eq 3 -and $subcommand -eq 'watch') { $candidates = $watch }
-  elseif ($command -eq 'help' -and $elements.Count -eq 3 -and ($subcommand -eq 'projects' -or $subcommand -eq 'sessions')) { $candidates = $resources }
+  elseif ($command -eq 'help' -and $elements.Count -eq 3 -and $subcommand -eq 'projects') { $candidates = $projectResources }
+  elseif ($command -eq 'help' -and $elements.Count -eq 3 -and $subcommand -eq 'sessions') { $candidates = $resources }
   elseif ($command -eq 'completion' -and $elements.Count -eq 2) {
     if ($wordToComplete -like '-*') { $candidates = @('--help','-h') }
     else { $candidates = @('bash','zsh','fish','powershell') }
@@ -624,7 +664,7 @@ Register-ArgumentCompleter -Native -CommandName komposyn-lg,komposyn-lg.exe -Scr
   elseif ($elements.Count -eq 2 -and $command -eq 'watch') { $candidates = $watch }
   elseif ($elements.Count -eq 2 -and $command -eq 'projects') {
     if ($wordToComplete -like '-*') { $candidates = @('--help','-h') }
-    else { $candidates = $resources }
+    else { $candidates = $projectResources }
   }
   elseif ($elements.Count -eq 2 -and $command -eq 'sessions') {
     if ($wordToComplete -like '-*') { $candidates = @('--help','-h','--data-dir','--format','--from','--to','--project','--session','--client','--provider','--model','--group-by','--timezone') }
@@ -637,6 +677,7 @@ Register-ArgumentCompleter -Native -CommandName komposyn-lg,komposyn-lg.exe -Scr
       { $_ -like 'usage:*' -or $_ -like 'cost:*' -or $_ -eq 'sessions:' } { $candidates = @('--help','-h','--data-dir','--format','--from','--to','--project','--session','--client','--provider','--model','--group-by','--timezone'); break }
       'projects:list' { $candidates = @('--help','-h','--data-dir','--format','--from','--to','--client','--provider','--model'); break }
       'projects:show' { $candidates = @('--help','-h','--data-dir','--format','--from','--to','--client','--provider','--model'); break }
+      'projects:inspect' { $candidates = @('--help','-h','--data-dir','--format','--from','--to','--limit','--offset'); break }
       'sessions:list' { $candidates = @('--help','-h','--data-dir','--format','--from','--to','--project','--client','--provider','--model'); break }
       'sessions:show' { $candidates = @('--help','-h','--data-dir','--format','--from','--to','--project','--client','--provider','--model','--group-by'); break }
       'watch:add' { $candidates = @('--help','-h','--data-dir','--defaults'); break }
