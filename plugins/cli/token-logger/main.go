@@ -166,6 +166,8 @@ type interactiveState struct {
 	projectRows     []tokenlogger.ProjectResource
 	sessionRows     []tokenlogger.SessionResource
 	modelRows       []interactiveModelSelection
+	projectRowsFrom time.Time
+	projectRowsTo   time.Time
 }
 
 type interactiveModelSelection struct {
@@ -625,6 +627,45 @@ func runInteractiveLoopWithClock(reader interactiveLineReader, stdout, stderr io
 				fmt.Fprintln(stdout, "clear is available only in an interactive terminal")
 			}
 		case "/projects":
+			if selector != "" {
+				args := strings.Fields(selector)
+				if len(args) != 2 || args[0] != "inspect" {
+					fmt.Fprintln(stdout, "usage: /projects [inspect <row-number|project-id>]")
+					continue
+				}
+				projectID := args[1]
+				inspectionFrom, inspectionTo := state.from, state.to
+				if row, err := strconv.Atoi(projectID); err == nil {
+					if state.view != "projects" || row < 1 || row > len(state.projectRows) {
+						fmt.Fprintln(stdout, "project inspection failed: row is unavailable in the currently displayed project list")
+						continue
+					}
+					projectID = state.projectRows[row-1].ID
+					inspectionFrom, inspectionTo = state.projectRowsFrom, state.projectRowsTo
+				} else if state.view == "projects" && !state.projectRowsFrom.IsZero() && !state.projectRowsTo.IsZero() {
+					inspectionFrom, inspectionTo = state.projectRowsFrom, state.projectRowsTo
+				}
+				if inspectionFrom.IsZero() || inspectionTo.IsZero() || !inspectionTo.After(inspectionFrom) {
+					fmt.Fprintln(stdout, "project inspection failed: display a report or project list first to establish its range")
+					continue
+				}
+				inspection, err := store.InspectProject(tokenlogger.ProjectInspectionRequest{
+					ProjectID: projectID, From: inspectionFrom.UTC(), To: inspectionTo.UTC(),
+				})
+				if err != nil {
+					fmt.Fprintf(stdout, "project inspection failed: %v\n", err)
+					continue
+				}
+				if !inspection.Exists {
+					fmt.Fprintln(stdout, "project inspection failed: project is unavailable in the local database")
+					continue
+				}
+				if err := writeProjectInspectionText(stdout, inspection); err != nil {
+					fmt.Fprintf(stderr, "write project inspection failed: %v\n", err)
+					return 2
+				}
+				continue
+			}
 			state.view = "projects"
 			state.projectID, state.projectName, state.projectLocation, state.sessionID = "", "", "", ""
 			state.clearModelSelection()
@@ -838,9 +879,13 @@ func renderInteractive(stdout, stderr io.Writer, store *tokenlogger.Store, state
 			return renderInteractiveError(stdout, stderr, store, reader, err)
 		}
 		state.projectRows = append(state.projectRows[:0], list.Projects...)
+		state.projectRowsFrom, state.projectRowsTo = state.from, state.to
 		state.sessionRows, state.modelRows = nil, nil
 		state.recordReport(now().UTC())
 		writeInteractiveRange(stdout, state)
+		if _, err := fmt.Fprintln(stdout, projectInventoryNote); err != nil {
+			return err
+		}
 		return writeProjectTable(stdout, list.Projects)
 	}
 	if state.view == "sessions" {
@@ -1092,6 +1137,7 @@ func printInteractiveHelp(stdout io.Writer) {
 	fmt.Fprint(stdout, `
 Browse
   /projects                  List projects
+  /projects inspect <row|id> Inspect attribution and stored activity
   /project <selector>        Open a project by row, name, or stable ID
   /sessions                  List sessions in the selected project
   /session <selector>        Open a session by row or ID prefix

@@ -21,6 +21,7 @@ ROWS = int(os.environ.get("DEMO_ROWS", "32"))
 COLS = int(os.environ.get("DEMO_COLS", "150"))
 TYPE_DELAY = float(os.environ.get("DEMO_TYPE_DELAY", "0.065"))
 COMMAND_HOLD = float(os.environ.get("DEMO_COMMAND_HOLD", "0.8"))
+EXPECTED_VERSION = os.environ.get("DEMO_EXPECT_VERSION", "komposyn-lg 0.9.0 (core 0.8.0)")
 ANSI = re.compile(rb"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))")
 
 
@@ -117,8 +118,8 @@ def main():
     if not settings.get("onboarding_complete") or settings.get("collector_enabled") or settings.get("auto_start"):
         raise SystemExit("complete onboarding and keep collection and auto-start disabled for the capture")
     version = subprocess.run([CLI, "version"], check=True, capture_output=True, text=True).stdout.strip()
-    if version != "komposyn-lg 0.9.0 (core 0.8.0)":
-        raise SystemExit(f"expected signed CLI v0.9.0 with core v0.8.0; got {version!r}")
+    if version != EXPECTED_VERSION:
+        raise SystemExit(f"expected {EXPECTED_VERSION!r}; got {version!r}")
     pid, fd = pty.fork()
     if pid == 0:
         os.execvpe(CLI, [CLI], os.environ.copy())
@@ -135,6 +136,13 @@ def main():
         time.sleep(2.2)
 
         project_row = row_number(transcript, "Ledger Studio")
+        if os.environ.get("DEMO_INSPECT_ROW") == "1":
+            clear_view(fd)
+            transcript = bytearray()
+            send_command(fd, f"/projects inspect {project_row}")
+            read_until_prompt(fd, transcript, b"Project inspection")
+            time.sleep(2.2)
+
         clear_view(fd)
         transcript = bytearray()
         send_command(fd, f"/project {project_row}")

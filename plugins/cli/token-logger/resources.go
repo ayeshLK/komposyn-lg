@@ -44,17 +44,20 @@ type sessionDetail struct {
 }
 
 func runProjectResources(args []string, stdout, stderr io.Writer) int {
-	if len(args) == 0 || (args[0] != "list" && args[0] != "show") {
-		fmt.Fprintln(stderr, "usage: komposyn-lg projects {list [options]|show <project-id> [options]}")
+	if len(args) == 0 || (args[0] != "list" && args[0] != "show" && args[0] != "inspect") {
+		fmt.Fprintln(stderr, "usage: komposyn-lg projects {list [options]|show <project-id> [options]|inspect <project-id> [options]}")
 		return 1
 	}
 	action, id, optionArgs := args[0], "", args[1:]
-	if action == "show" {
+	if action == "show" || action == "inspect" {
 		if len(optionArgs) == 0 || strings.HasPrefix(optionArgs[0], "--") {
-			fmt.Fprintln(stderr, "projects show requires a project ID")
+			fmt.Fprintf(stderr, "projects %s requires a project ID\n", action)
 			return 1
 		}
 		id, optionArgs = optionArgs[0], optionArgs[1:]
+	}
+	if action == "inspect" {
+		return runProjectInspection(id, optionArgs, stdout, stderr)
 	}
 	options, err := parseResourceOptions(optionArgs, action == "list")
 	if err != nil {
@@ -97,6 +100,267 @@ func runProjectResources(args []string, stdout, stderr io.Writer) int {
 	}
 	return 0
 }
+
+type projectInspectionOptions struct {
+	dataDir string
+	format  string
+	limit   int
+	offset  int
+	filter  tokenlogger.ResourceFilter
+}
+
+func runProjectInspection(id string, args []string, stdout, stderr io.Writer) int {
+	now := time.Now().UTC()
+	options := projectInspectionOptions{
+		format: "text", limit: tokenlogger.DefaultInspectionPageSize,
+		filter: tokenlogger.ResourceFilter{From: now.AddDate(0, 0, -7), To: now},
+	}
+	for index := 0; index < len(args); index += 2 {
+		if index+1 >= len(args) {
+			fmt.Fprintf(stderr, "missing value for %s\n", args[index])
+			return 1
+		}
+		value := args[index+1]
+		switch args[index] {
+		case "--data-dir":
+			options.dataDir = value
+		case "--format":
+			if value != "text" && value != "json" {
+				fmt.Fprintf(stderr, "unsupported format %q (want text or json)\n", value)
+				return 1
+			}
+			options.format = value
+		case "--from":
+			parsed, err := parseTime(value)
+			if err != nil {
+				fmt.Fprintf(stderr, "invalid --from: %v\n", err)
+				return 1
+			}
+			options.filter.From = parsed
+		case "--to":
+			parsed, err := parseTime(value)
+			if err != nil {
+				fmt.Fprintf(stderr, "invalid --to: %v\n", err)
+				return 1
+			}
+			options.filter.To = parsed
+		case "--limit":
+			parsed, err := strconv.Atoi(value)
+			if err != nil {
+				fmt.Fprintf(stderr, "invalid --limit %q\n", value)
+				return 1
+			}
+			options.limit = parsed
+		case "--offset":
+			parsed, err := strconv.Atoi(value)
+			if err != nil {
+				fmt.Fprintf(stderr, "invalid --offset %q\n", value)
+				return 1
+			}
+			options.offset = parsed
+		default:
+			fmt.Fprintf(stderr, "unknown option %q\n", args[index])
+			return 1
+		}
+	}
+	if !options.filter.To.After(options.filter.From) {
+		fmt.Fprintln(stderr, "inspection range must be increasing")
+		return 1
+	}
+	if options.limit < 1 || options.limit > tokenlogger.MaxInspectionPageSize {
+		fmt.Fprintf(stderr, "inspection limit must be between 1 and %d\n", tokenlogger.MaxInspectionPageSize)
+		return 1
+	}
+	if options.offset < 0 || options.offset > tokenlogger.MaxInspectionOffset {
+		fmt.Fprintf(stderr, "inspection offset must be between 0 and %d\n", tokenlogger.MaxInspectionOffset)
+		return 1
+	}
+	store, closeStore, ok := openResourceStore(options.dataDir, stderr)
+	if !ok {
+		return 2
+	}
+	defer closeStore()
+	inspection, err := store.InspectProject(tokenlogger.ProjectInspectionRequest{
+		ProjectID: id, From: options.filter.From.UTC(), To: options.filter.To.UTC(),
+		Limit: options.limit, Offset: options.offset,
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "inspect project: %v\n", err)
+		return 2
+	}
+	if !inspection.Exists {
+		fmt.Fprintln(stderr, "project is unavailable in the local database")
+		return 2
+	}
+	if options.format == "json" {
+		err = writeResourceJSON(stdout, inspection)
+	} else {
+		err = writeProjectInspectionText(stdout, inspection)
+	}
+	if err != nil {
+		fmt.Fprintf(stderr, "write project inspection: %v\n", err)
+		return 2
+	}
+	return 0
+}
+
+func writeProjectInspectionText(output io.Writer, inspection tokenlogger.ProjectInspection) error {
+	write := func(format string, values ...any) error {
+		_, err := fmt.Fprintf(output, format, values...)
+		return err
+	}
+	if err := write("Project inspection (format %d)\n", inspection.FormatVersion); err != nil {
+		return err
+	}
+	if err := write("  project ID digest: %s\n  display name digest: %s\n  display name text omitted: %t\n  recorded name origin: %s\n", inspection.ProjectIDDigest, emptyAsUnavailable(inspection.DisplayNameDigest), inspection.TextOmitted, inspection.NameOrigin); err != nil {
+		return err
+	}
+	if err := write("  name provenance is unavailable for legacy records when it was not persisted; classification evidence is separate and cannot be inferred from a name or adapter.\n"); err != nil {
+		return err
+	}
+	if err := write("  source classification: %s — %s\n", inspection.ClassificationEvidence.Status, inspection.ClassificationEvidence.Reason); err != nil {
+		return err
+	}
+	if err := write("\nSelected range [%s, %s) UTC\n", inspection.SelectedRange.From.UTC().Format(time.RFC3339Nano), inspection.SelectedRange.To.UTC().Format(time.RFC3339Nano)); err != nil {
+		return err
+	}
+	selected := inspection.SelectedActivity
+	if err := write("  events: %d; usage-bearing sessions: %d; sessionless events: %d; matching events: %t\n", selected.EventCount, selected.UsageBearingSessionCount, selected.SessionlessEventCount, selected.HasMatchingEvents); err != nil {
+		return err
+	}
+	if err := writeInspectionActivityBounds(write, "selected", selected); err != nil {
+		return err
+	}
+	if err := write("  usage: requests=%d; sessions=%d; total tokens=%d\n", inspection.SelectedUsage.RequestCount, inspection.SelectedUsage.SessionCount, inspection.SelectedUsage.TotalTokens); err != nil {
+		return err
+	}
+	historical := inspection.HistoricalActivity
+	if err := write("\nPersisted historical activity (coverage: %s)\n", inspection.HistoricalCoverage); err != nil {
+		return err
+	}
+	if err := write("  stored sessions: %d; usage-bearing sessions: %d; events: %d; sessionless events: %d\n", inspection.StoredSessionCount, historical.UsageBearingSessionCount, historical.EventCount, historical.SessionlessEventCount); err != nil {
+		return err
+	}
+	if err := writeInspectionActivityBounds(write, "historical", historical); err != nil {
+		return err
+	}
+	if err := write("  historical activity is stored evidence only; it does not establish complete lifetime history. Name provenance is reported only when persisted and otherwise remains unavailable.\n"); err != nil {
+		return err
+	}
+	if err := write("\nLocation evidence: %s\n", inspection.LocationEvidence.Status); err != nil {
+		return err
+	}
+	if inspection.LocationEvidence.Reason != "" {
+		if err := write("  %s\n", inspection.LocationEvidence.Reason); err != nil {
+			return err
+		}
+	}
+	for _, location := range inspection.Locations {
+		if err := write("  digest=%s preferred=%t provenance=%s\n", location.Digest, location.Preferred, location.Provenance); err != nil {
+			return err
+		}
+	}
+	if err := writeInspectionPage(output, "locations", inspection.LocationsPage); err != nil {
+		return err
+	}
+	if err := write("\nAlias evidence: %s\n", inspection.AliasEvidence.Status); err != nil {
+		return err
+	}
+	if inspection.AliasEvidence.Reason != "" {
+		if err := write("  %s\n", inspection.AliasEvidence.Reason); err != nil {
+			return err
+		}
+	}
+	for _, alias := range inspection.Aliases {
+		if err := write("  resource=%s scope=%s scope_digest=%s alias_digest=%s provenance=%s\n", alias.Resource, alias.ScopeKind, alias.ScopeDigest, alias.Digest, alias.Provenance); err != nil {
+			return err
+		}
+	}
+	if err := writeInspectionPage(output, "aliases", inspection.AliasesPage); err != nil {
+		return err
+	}
+	if err := write("\nReconciliation warnings (all time; not collection/parser outcomes)\n"); err != nil {
+		return err
+	}
+	for _, warning := range inspection.Warnings {
+		if err := write("  kind=%s scope=%s digest=%s occurrences=%d first=%s last=%s: %s\n", warning.Kind, warning.ScopeKind, warning.ScopeDigest, warning.OccurrenceCount, warning.FirstSeenAt.UTC().Format(time.RFC3339Nano), warning.LastSeenAt.UTC().Format(time.RFC3339Nano), warning.Message); err != nil {
+			return err
+		}
+	}
+	if err := writeInspectionPage(output, "warnings", inspection.WarningsPage); err != nil {
+		return err
+	}
+	if err := write("\nSource evidence: %s\n", inspection.SourceEvidence.Status); err != nil {
+		return err
+	}
+	if inspection.SourceEvidence.Reason != "" {
+		if err := write("  %s\n", inspection.SourceEvidence.Reason); err != nil {
+			return err
+		}
+	}
+	for _, source := range inspection.Sources {
+		if err := write("  adapter=%s source_id_digest=%s events=%d cursor=%s", source.Adapter, source.SourceIDDigest, source.EventCount, source.CursorStatus); err != nil {
+			return err
+		}
+		if source.CursorByteOffset != nil {
+			if err := write(" byte_offset=%d generation=%d pending_tail=%t snapshot_reusable=%t", *source.CursorByteOffset, valueOrZero(source.CursorGeneration), valueOrFalse(source.PendingTail), valueOrFalse(source.SnapshotReusable)); err != nil {
+				return err
+			}
+		}
+		if err := write("\n"); err != nil {
+			return err
+		}
+	}
+	if err := writeInspectionPage(output, "sources", inspection.SourcesPage); err != nil {
+		return err
+	}
+	if err := write("\nRecovery classification (advisory): %s\n  %s\n", inspection.RecoveryClassification, inspection.RecoveryExplanation); err != nil {
+		return err
+	}
+	return write("\nInspection query reads stored database evidence only; it does not scan provider files, start collection, repair identities, or access the network. Store.Open can still perform its normal migration/catalog synchronization. Digests and exact metrics may identify data; do not treat this output as automatically safe to publish.\n")
+}
+
+func writeInspectionActivityBounds(write func(string, ...any) error, label string, activity tokenlogger.ProjectInspectionActivity) error {
+	first, last := "unavailable", "unavailable"
+	if activity.FirstActive != nil {
+		first = activity.FirstActive.UTC().Format(time.RFC3339Nano)
+	}
+	if activity.LastActive != nil {
+		last = activity.LastActive.UTC().Format(time.RFC3339Nano)
+	}
+	return write("  %s activity bounds: first=%s last=%s\n", label, first, last)
+}
+
+func writeInspectionPage(output io.Writer, name string, page tokenlogger.InspectionPage) error {
+	returned := max(page.Total-int64(page.Offset), 0)
+	returned = min(returned, int64(page.Limit))
+	if _, err := fmt.Fprintf(output, "  page: offset=%d limit=%d returned=%d total=%d has_more=%t truncated=%t", page.Offset, page.Limit, returned, page.Total, page.HasMore, page.Truncated); err != nil {
+		return err
+	}
+	if page.NextOffset != nil {
+		if _, err := fmt.Fprintf(output, " next_offset=%d (repeat --offset %d)", *page.NextOffset, *page.NextOffset); err != nil {
+			return err
+		}
+	}
+	_, err := fmt.Fprintf(output, " [%s]\n", name)
+	return err
+}
+
+func emptyAsUnavailable(value string) string {
+	if value == "" {
+		return "unavailable"
+	}
+	return value
+}
+
+func valueOrZero(value *int64) int64 {
+	if value == nil {
+		return 0
+	}
+	return *value
+}
+
+func valueOrFalse(value *bool) bool { return value != nil && *value }
 
 func runSessionResources(args []string, stdout, stderr io.Writer) int {
 	action := args[0]
@@ -250,9 +514,14 @@ func writeProjectResources(output io.Writer, list tokenlogger.ProjectResourceLis
 		writer.Flush()
 		return writer.Error()
 	default:
+		if _, err := fmt.Fprintln(output, projectInventoryNote); err != nil {
+			return err
+		}
 		return writeProjectTable(output, list.Projects)
 	}
 }
+
+const projectInventoryNote = "All known projects; usage summaries, usage-derived session counts, and last-active values use this range.\nWARNINGS count reconciliation only, not all collection/parser errors. Zero usage does not prove lifetime inactivity or token loss."
 
 func writeSessionResources(output io.Writer, list tokenlogger.SessionResourceList, format string) error {
 	switch format {

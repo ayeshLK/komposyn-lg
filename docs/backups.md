@@ -10,9 +10,9 @@ advances the schema. Same-schema executable upgrades do not create a migration
 backup. Keep any `.komposyn-pre-migration-*.sqlite` files with the protected
 data directory until the upgrade has been validated.
 
-The next CLI release candidate updates core from v0.7.1 to v0.8.0. On first
-open, core migrates schema 15 to 16 and creates a verified backup that records
-the source and target schema and core version. Keep a separate full data
+The next CLI release candidate updates core from v0.7.1 to v0.9.0. Core v0.8.0
+introduced the schema 15 to 16 migration, which creates a verified backup that
+records the source and target schema and core version. Keep a separate full data
 directory backup before upgrading. Stop collectors before copying or restoring
 data. After a successful migration, CLI v0.8.1 and other older binaries refuse
 the schema-16 database without changing it. To recover, stop collectors and

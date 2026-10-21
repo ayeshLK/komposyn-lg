@@ -30,7 +30,7 @@ func TestPublicCommandHelpDoesNotTouchDataDirectory(t *testing.T) {
 	cases := [][]string{
 		{"--help"}, {"-h"}, {"help"}, {"help", "import"}, {"help", "watch", "add"},
 		{"version", "--help"}, {"import", "--help"}, {"usage", "--help"}, {"cost", "-h"},
-		{"projects", "--help"}, {"projects", "list", "--help"}, {"projects", "show", "project-id", "--help"},
+		{"projects", "--help"}, {"projects", "list", "--help"}, {"projects", "show", "project-id", "--help"}, {"projects", "inspect", "project-id", "--help"},
 		{"sessions", "--help"}, {"sessions", "list", "--help"}, {"sessions", "show", "session-id", "--help"},
 		{"watch", "--help"}, {"watch", "add", "--help"}, {"watch", "remove", "--help"},
 		{"watch", "list", "--help"}, {"watch", "start", "--help"}, {"watch", "status", "--help"},
@@ -44,7 +44,7 @@ func TestPublicCommandHelpDoesNotTouchDataDirectory(t *testing.T) {
 	for _, subcommand := range publicWatchCommands {
 		cases = append(cases, []string{"help", "watch", subcommand})
 	}
-	for _, resourceCommand := range []string{"projects list", "projects show", "sessions list", "sessions show"} {
+	for _, resourceCommand := range []string{"projects list", "projects show", "projects inspect", "sessions list", "sessions show"} {
 		cases = append(cases, append([]string{"help"}, strings.Split(resourceCommand, " ")...))
 	}
 	for _, args := range cases {
@@ -108,7 +108,7 @@ func TestShellCompletionIsDeterministicAndPublicOnly(t *testing.T) {
 					t.Errorf("completion omits public command %q", command)
 				}
 			}
-			for _, subcommand := range append(append([]string{}, publicWatchCommands...), "list", "show") {
+			for _, subcommand := range append(append([]string{}, publicWatchCommands...), "list", "show", "inspect") {
 				if !strings.Contains(first.String(), subcommand) {
 					t.Errorf("completion omits public subcommand %q", subcommand)
 				}

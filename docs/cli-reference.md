@@ -162,9 +162,44 @@ of a layout that adapts to terminal width.
 ```text
 komposyn-lg projects list [--from <time>] [--to <time>] [--format table|json|csv]
 komposyn-lg projects show <project-id> [--from <time>] [--to <time>] [--format table|json]
+komposyn-lg projects inspect <project-id> [--from <time>] [--to <time>]
+  [--limit <1-50>] [--offset <0-100000>] [--format json]
 komposyn-lg sessions list --project <project-id> [--from <time>] [--to <time>] [--format table|json|csv]
 komposyn-lg sessions show <session-id> [--project <project-id>] [--group-by model] [--format table|json|csv]
 ```
+
+`projects list` includes all known projects, including inactive and
+metadata-only projects. Usage totals, usage-derived session counts, and last
+active values are scoped to the selected range; `WARNINGS` counts
+reconciliation warnings rather than all collection/parser errors. A zero in
+the selected range does not establish lifetime inactivity or token loss. The
+existing list defaults and JSON/CSV shapes are unchanged.
+
+`projects inspect` returns bounded stored evidence for one full project ID.
+Human text is the default; `--format json` writes the versioned core
+`ProjectInspection` response directly. The same limit and offset are applied to
+locations, aliases, warnings, and source evidence. Follow a collection's
+`next_offset` until its `has_more` is false by repeating the command with that
+offset. Other collections are also returned at that offset and may have
+different next offsets. `truncated` means the core offset ceiling prevents
+another page. Each page is a separate database snapshot, so concurrent imports
+can affect later offsets. Use the same `--from`, `--to`, and `--data-dir`
+values when retrieving pages.
+
+The inspection distinguishes selected-range usage from all currently stored
+historical usage, and persisted sessions from sessions represented by usage.
+Historical evidence does not establish complete lifetime history. Name origin
+and original source-classification may be unavailable on older databases;
+provisional labels are not necessarily repaired by an upgrade. Location,
+alias, warning, and source evidence uses bounded digests and sanitized fields;
+recovery classification is advisory and never renames, merges, or deletes.
+Inspection itself does not read provider files, start collection, repair
+identities, or access the network. `Store.Open` can still perform its existing
+migration/catalog synchronization. Stable digests and exact metrics may
+identify data, so inspection JSON is not automatically safe to publish.
+This command requires KompoSyn core v0.9.0 or newer; the CLI's current minimum
+supported core floor and dependency pin are both v0.9.0. Temporary candidate
+overrides are development validation only.
 
 These commands browse stable local resources. List JSON and CSV have
 `format_version: 1`; selectors in non-interactive commands are full stable IDs,
