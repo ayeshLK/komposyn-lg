@@ -8,8 +8,9 @@ version for core `plugin_version`. The first standalone release was CLI
 release candidate pins the published `github.com/ayeshLK/komposyn v0.9.0` and
 sets it as the minimum supported core version. Normal CLI CI tests that version
 once instead of adding a redundant second job. Core v0.8.0 migrated schema 15
-to 16, so native upgrade checks also verify migration backup recovery and
-refusal by the shipped v0.8.1 binary. See
+to 16, and core v0.9.0 migrates 16 to 17 with recorded project-name origin.
+Native upgrade checks verify schema-15 backup recovery and refusal of schema 17
+by the shipped older binaries. See
 [core compatibility and coordinated security releases](core-compatibility-security.md).
 
 ## Publishing

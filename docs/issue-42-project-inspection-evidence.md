@@ -8,6 +8,7 @@ This development evidence is for CLI issue [#42](https://github.com/ayeshLK/komp
 - Core candidate: `e8a4288f8a2c0e6262bf7c19936d61e956e78081`.
 - Core [v0.9.0](https://github.com/ayeshLK/komposyn/releases/tag/v0.9.0) is published at tag commit `60d999cfdb21ad3e886f110ff9fb0719c513ece9`. It descends from candidate `e8a4288f8a2c0e6262bf7c19936d61e956e78081`; the diff between those commits contains only `.release-please-manifest.json` and `CHANGELOG.md` updates. The inspection runtime/API matches the measured and tested candidate.
 - The CLI `go.mod` and `go.sum` pin core `v0.9.0`, and the documented minimum supported core floor is also `v0.9.0`. No permanent `replace` or workspace file is used. `GOWORK=off go list -m -f '{{.Version}} {{.Dir}}' github.com/ayeshLK/komposyn` resolved `v0.9.0` from `/home/ayesh/go/pkg/mod/github.com/ayesh!l!k/komposyn@v0.9.0`.
+- Core v0.9.0 adds schema migration 17 for recorded project-name origin. Upgrading the shipped CLI v0.8.1/schema 15 database applies migrations 16 and 17 and retains a verified schema-15 recovery backup. Legacy name origin remains unknown; the migration does not infer it.
 
 ## Reproducing the candidate override
 
@@ -64,6 +65,7 @@ With `GOWORK=off` and the published module cache resolving core v0.9.0:
 | `go test -race ./...` | Passed for the CLI module. |
 | `make check` | Passed, including formatting, vet, tests, build, installer trust, release provenance, and executable-copy retry checks. The provenance fixture's expected rejection cases still reject local replacements and workspaces. |
 | `python3 scripts/test-protocol-smoke.py` | Passed (2 tests). |
+| `bash scripts/verify-published-upgrades.sh /tmp/komposyn-lg-pr44-schema17-dist /tmp/komposyn-lg-pr44-schema17-upgrades-rerun linux_amd64` | Passed on native Linux amd64 against signed historical CLI releases v0.6.0, v0.7.0, and v0.8.1. Verified the schema-15-to-17 upgrade, usable schema-15 backup restoration, v0.8.1 refusal without mutation, checkpoint continuation, install/upgrade, and data-preserving uninstall. |
 | `bash scripts/test-copy-release-executable.sh` | Passed as part of `make check`. |
 | `GOWORK=off bash scripts/test-release-provenance.sh` | Passed as part of `make check`; the release builder requires published core v0.9.0. |
 | Core `go test ./plugins/library/token-logger -count=1` at the candidate checkout | Passed. |
@@ -87,4 +89,4 @@ DEMO_INSPECT_ROW=1 DEMO_EXPECT_VERSION='komposyn-lg 0.9.0 (core 0.9.0)' CLI_BIN=
 
 The normal release-demo defaults continue to expect the signed CLI v0.9.0/core v0.8.0 recording. Inspection JSON is core format version 2, so clients must not assume it is anonymous or safe to publish.
 
-Native validation ran on Linux only. macOS and Windows were not available locally; any cross-compilation is not runtime evidence. Ordinary local validation against the published dependency passes, but CI on the eventual PR, native platform evidence, and the signed six-target/historical lifecycle checks remain outstanding. No release version was changed or published.
+Native validation ran on Linux only, including the signed historical-upgrade verifier above. macOS and Windows were not available locally; any cross-compilation is not runtime evidence. Ordinary local validation against the published dependency passes, but CI on the PR, native macOS/Windows runtime evidence, and the signed six-target/historical lifecycle release gates remain outstanding. No release version was changed or published.

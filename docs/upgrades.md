@@ -28,13 +28,14 @@ them may alter a newer database. Restore a verified pre-migration backup into a
 separate working directory and use a binary compatible with that backup's
 schema. Stop all collectors before restoring or replacing data.
 
-The next CLI release candidate pins core v0.9.0. Its schema remains 16; the
-schema-15 migration was introduced in core v0.8.0 and adds private append
-checkpoints. Upgrading from CLI v0.8.1/core v0.7.1 migrates the existing
-schema-15 database and retains a verified schema-15 backup beside it.
-CLI v0.8.1 refuses the migrated database without mutation. For rollback,
-restore the pre-migration database into a separate data directory and run a
-CLI that supports schema 15; do not point the old executable at schema 16.
+The next CLI release candidate pins core v0.9.0. Core v0.8.0 introduced schema
+16 and private append checkpoints; v0.9.0 adds schema 17 for recorded
+project-name origin, leaving legacy provenance unknown. Upgrading from CLI
+v0.8.1/core v0.7.1 migrates the existing schema-15 database through schema 17
+and retains a verified schema-15 backup beside it. CLI v0.8.1 and CLI
+v0.9.0/core v0.8.0 refuse the migrated database without mutation. For rollback,
+restore the pre-migration database into a separate data directory and use a CLI
+that supports schema 15; do not point an older executable at schema 17.
 
 In-CLI self-updating is deferred. Release installers verify checksums and Cosign
 signatures; do not bypass those checks by downloading an unverified binary.

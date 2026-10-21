@@ -44,9 +44,10 @@ The CLI CI tests the pinned core version. The minimum supported version and
 pin for the next release candidate are both `v0.9.0`; if they diverge later,
 add explicit CLI CI coverage for both before documenting the expanded support
 range. Core v0.8.0 advanced SQLite schema 15 to 16 to add private parser
-checkpoints. The migration is forward-only, keeps bounded normalized parser
-state rather than provider source text, and creates a verified pre-migration
-backup. The CLI upgrade guidance describes recovery and older-binary refusal.
+checkpoints. Core v0.9.0 advances schema 16 to 17 to record project-name origin;
+historical origins remain unknown. These forward-only migrations create a
+verified pre-migration backup. The CLI upgrade guidance describes recovery and
+older-binary refusal.
 Never commit a `replace` directive; candidate overrides exist only in
 disposable CI or measurement worktrees.
 

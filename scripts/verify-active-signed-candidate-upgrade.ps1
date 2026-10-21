@@ -164,9 +164,9 @@ new_schema=read(sys.argv[1],"SELECT MAX(version) FROM schema_migrations")[0]
 integrity=read(sys.argv[2],"PRAGMA integrity_check")[0]
 source,target=read(sys.argv[2],"SELECT source_schema,target_schema FROM komposyn_migration_backup")
 backup_schema=read(sys.argv[2],"SELECT MAX(version) FROM schema_migrations")[0]
-if (new_schema,integrity,source,target,backup_schema)!=(16,'ok',15,16,15): raise SystemExit(f"schema-15-to-16 backup mismatch: {(new_schema,integrity,source,target,backup_schema)!r}")
+if (new_schema,integrity,source,target,backup_schema)!=(17,'ok',15,17,15): raise SystemExit(f"schema-15-to-17 backup mismatch: {(new_schema,integrity,source,target,backup_schema)!r}")
 '@ | py -3 - (Join-Path $dataDir 'token-logger.db') $backup.FullName
-        if ($LASTEXITCODE -ne 0) { throw 'schema-15-to-16 migration or backup metadata is invalid' }
+        if ($LASTEXITCODE -ne 0) { throw 'schema-15-to-17 migration or backup metadata is invalid' }
     }
     $backupDigest = (Get-FileHash -Algorithm SHA256 -LiteralPath $backup.FullName).Hash
     $restoreDir = Join-Path $temp 'restore'
@@ -182,10 +182,10 @@ if (new_schema,integrity,source,target,backup_schema)!=(16,'ok',15,16,15): raise
         Invoke-CLI @('watch','stop','--timeout','10s') | Out-Null
         $beforeFiles = Get-ChildItem -LiteralPath $dataDir -Filter 'token-logger.db*' | Sort-Object Name | ForEach-Object { "$($_.Name):$((Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash)" }
         $oldRefusal = & (Join-Path $oldDir 'komposyn-lg.exe') usage --format json 2>&1 | Out-String
-        if ($LASTEXITCODE -eq 0) { throw 'signed CLI v0.8.1 unexpectedly opened the migrated schema-16 database' }
+        if ($LASTEXITCODE -eq 0) { throw 'signed CLI v0.8.1 unexpectedly opened the migrated schema-17 database' }
         if ($oldRefusal -notmatch 'newer than supported version') { throw "signed CLI v0.8.1 failed for an unexpected reason: $oldRefusal" }
         $afterFiles = Get-ChildItem -LiteralPath $dataDir -Filter 'token-logger.db*' | Sort-Object Name | ForEach-Object { "$($_.Name):$((Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash)" }
-        if (($beforeFiles -join "`n") -ne ($afterFiles -join "`n")) { throw 'signed CLI v0.8.1 refusal mutated the schema-16 database or sidecars' }
+        if (($beforeFiles -join "`n") -ne ($afterFiles -join "`n")) { throw 'signed CLI v0.8.1 refusal mutated the schema-17 database or sidecars' }
     }
 
     $env:TOKEN_LOGGER_DATA_DIR = $dataDir
