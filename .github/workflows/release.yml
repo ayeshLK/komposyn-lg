@@ -116,7 +116,7 @@ jobs:
       - name: Resolve validated core version
         id: core
         shell: bash
-        run: echo "version=$(bash scripts/resolve-release-core-version.sh)" >> "$GITHUB_OUTPUT"
+        run: bash scripts/write-release-core-version-output.sh "$GITHUB_OUTPUT"
 
       - name: Verify modules
         run: go mod verify
