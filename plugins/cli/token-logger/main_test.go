@@ -100,6 +100,38 @@ func TestImportCommand(t *testing.T) {
 	}
 }
 
+func TestImportCommandSkipsUnrecognizedJSONLWithoutCreatingReferences(t *testing.T) {
+	dataDir := t.TempDir()
+	path := filepath.Join(t.TempDir(), "auxiliary.jsonl")
+	if err := os.WriteFile(path, []byte(`{"type":"summary","summary":"synthetic auxiliary"}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	if code := runImportWithDetector([]string{path, "--format", "json", "--data-dir", dataDir}, &stdout, &stderr,
+		func(string) (string, error) { return "", nil }); code != 0 {
+		t.Fatalf("unknown-source import exit=%d stderr=%q output=%q", code, stderr.String(), stdout.String())
+	}
+	var result importCommandOutput
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.SourcesDiscovered != 1 || result.SourcesProcessed != 0 || result.Outcomes.IgnoredNonUsage != 1 || !result.Complete {
+		t.Fatalf("unknown-source result=%+v; want discovered=1 processed=0 ignored=1 complete", result)
+	}
+	store, err := tokenlogger.Open(filepath.Join(dataDir, "token-logger.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	projects, err := store.ListProjects(tokenlogger.ResourceFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(projects.Projects) != 0 {
+		t.Fatalf("unknown-source import created projects: %+v", projects.Projects)
+	}
+}
+
 func TestClaudeFallbackCreditImportIsVisibleInReportsAndInteractiveMode(t *testing.T) {
 	dataDir := t.TempDir()
 	path := filepath.Join(t.TempDir(), "fallback-credit.jsonl")
