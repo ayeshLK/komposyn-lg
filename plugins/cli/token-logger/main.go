@@ -1374,6 +1374,10 @@ func settingBool(value string) (bool, bool) {
 }
 
 func runImport(args []string, stdout, stderr io.Writer) int {
+	return runImportWithDetector(args, stdout, stderr, tokenlogger.DetectAdapter)
+}
+
+func runImportWithDetector(args []string, stdout, stderr io.Writer, detectAdapter func(string) (string, error)) int {
 	if len(args) < 1 {
 		fmt.Fprintln(stderr, "usage: komposyn-lg import <file-or-directory> [--data-dir <path>] [--format text|json]")
 		return 1
@@ -1426,10 +1430,16 @@ func runImport(args []string, stdout, stderr io.Writer) int {
 	total := tokenlogger.ImportResult{}
 	processed := 0
 	for _, sourcePath := range paths {
-		adapter, detectErr := tokenlogger.DetectAdapter(sourcePath)
+		adapter, detectErr := detectAdapter(sourcePath)
 		if detectErr != nil {
 			fmt.Fprintf(stderr, "detect source: %v\n", detectErr)
 			total.Outcomes.Add(tokenlogger.OutcomeFailedSource)
+			continue
+		}
+		if adapter == "" {
+			// Discovery may include unrelated JSONL files. Do not route an
+			// unrecognized source through the Codex parser by default.
+			total.Outcomes.Add(tokenlogger.OutcomeIgnoredNonUsage)
 			continue
 		}
 		var result tokenlogger.ImportResult
