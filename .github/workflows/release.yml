@@ -27,6 +27,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
       commit: ${{ steps.commit.outputs.commit }}
+      core_version: ${{ steps.core.outputs.version }}
     steps:
       - name: Check out master
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -111,6 +112,11 @@ jobs:
         with:
           go-version: 1.26.9
           cache: true
+
+      - name: Resolve validated core version
+        id: core
+        shell: bash
+        run: bash scripts/write-release-core-version-output.sh "$GITHUB_OUTPUT"
 
       - name: Verify modules
         run: go mod verify
@@ -236,7 +242,7 @@ jobs:
         env:
           EXPECTED_TARGET: ${{ matrix.target }}
           EXPECTED_VERSION: ${{ needs.prepare.outputs.version }}
-          EXPECTED_CORE_VERSION: 0.8.0
+          EXPECTED_CORE_VERSION: ${{ needs.prepare.outputs.core_version }}
         shell: bash
         run: bash scripts/verify-signed-runtime.sh dist "$EXPECTED_TARGET" "$EXPECTED_VERSION" "$EXPECTED_CORE_VERSION"
 
@@ -400,14 +406,14 @@ jobs:
         if: runner.os != 'Windows'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash scripts/verify-active-signed-candidate-upgrade.sh "${{ matrix.historical_tag }}" dist
+        run: bash scripts/verify-active-signed-candidate-upgrade.sh "${{ matrix.historical_tag }}" dist "${{ needs.prepare.outputs.version }}" "${{ needs.prepare.outputs.core_version }}"
       - name: Verify active collector upgrade on native Windows
         if: runner.os == 'Windows'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
           EXPECTED_TARGET: ${{ matrix.target }}
-        run: ./scripts/verify-active-signed-candidate-upgrade.ps1 -OldTag "${{ matrix.historical_tag }}" -CandidateDir dist
+        run: ./scripts/verify-active-signed-candidate-upgrade.ps1 -OldTag "${{ matrix.historical_tag }}" -CandidateDir dist -ExpectedCliVersion "${{ needs.prepare.outputs.version }}" -ExpectedCoreVersion "${{ needs.prepare.outputs.core_version }}"
 
   publish:
     name: Publish GitHub release
@@ -557,7 +563,7 @@ jobs:
           for archive in "${archives[@]}"; do
             cosign verify-blob --signature "${archive}.sig" --certificate "${archive}.pem" --certificate-identity-regexp "$identity" --certificate-oidc-issuer "$issuer" "$archive"
           done
-          bash scripts/verify-signed-runtime.sh published linux_amd64 "$RELEASE_VERSION" 0.8.0
+          bash scripts/verify-signed-runtime.sh published linux_amd64 "$RELEASE_VERSION" "${{ needs.prepare.outputs.core_version }}"
           bash scripts/verify-release.sh published
 
       - name: Remove completed release marker

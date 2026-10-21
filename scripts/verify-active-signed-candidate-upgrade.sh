@@ -16,7 +16,9 @@
 set -euo pipefail
 
 old_tag="${1:-v0.6.0}"
-candidate_dir="${2:?usage: verify-active-signed-candidate-upgrade.sh <historical-tag> <signed-candidate-dir>}"
+candidate_dir="${2:?usage: verify-active-signed-candidate-upgrade.sh <historical-tag> <signed-candidate-dir> [expected-cli-version] [expected-core-version]}"
+expected_cli_version="${3:-}"
+expected_core_version="${4:-$(bash "$(dirname "${BASH_SOURCE[0]}")/resolve-release-core-version.sh")}"
 repo='ayeshLK/komposyn'
 identity='^https://github.com/ayeshLK/komposyn/.github/workflows/release.yml@refs/heads/master$'
 candidate_identity='^https://github.com/ayeshLK/komposyn-lg/.github/workflows/release.yml@refs/heads/master$'
@@ -52,6 +54,10 @@ old_version="${old_tag#v}"
 old_asset="komposyn-lg_${old_version}_${target}.tar.gz"
 candidate_version="$(sed -n 's/^# version=//p' "$candidate_dir/SHA256SUMS" | head -1)"
 candidate_version="${candidate_version#v}"
+if [[ -n "$expected_cli_version" && "$candidate_version" != "$expected_cli_version" ]]; then
+	echo "candidate manifest version $candidate_version does not match prepared CLI version $expected_cli_version" >&2
+	exit 1
+fi
 candidate_asset="komposyn-lg_${candidate_version}_${target}.tar.gz"
 old_dir="$tmp_dir/old-release"
 install_dir="$tmp_dir/bin"
@@ -183,8 +189,8 @@ if kill -0 "$old_pid" 2>/dev/null; then
 	exit 1
 fi
 new_version="$($binary version)"
-[[ "$new_version" == *"komposyn-lg $candidate_version (core 0.8.0)"* ]] || {
-	echo "candidate did not replace the historical executable: $new_version" >&2
+bash "$(dirname "${BASH_SOURCE[0]}")/verify-cli-version-output.sh" "$new_version" "$candidate_version" "$expected_core_version" || {
+	echo "candidate did not replace the historical executable" >&2
 	exit 1
 }
 after_report="$("$binary" usage --format json)"

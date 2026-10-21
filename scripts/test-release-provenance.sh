@@ -3,6 +3,7 @@ set -euo pipefail
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 resolver="$root_dir/scripts/resolve-core-version.sh"
+release_resolver="$root_dir/scripts/resolve-release-core-version.sh"
 expected_version='v0.9.0'
 
 python3 - "$root_dir/release-please-config.json" <<'PY'
@@ -15,7 +16,8 @@ if config["packages"]["."]["include-component-in-tag"] is not False:
     raise SystemExit("Release Please must produce plain vX.Y.Z tags for release.yml")
 PY
 
-resolved="$(bash "$resolver" github.com/ayeshLK/komposyn "$expected_version")"
+resolved="$(bash "$release_resolver")"
+expected_version="${expected_version#v}"
 [[ "$resolved" == "$expected_version" ]] || {
 	echo "resolver returned $resolved instead of $expected_version" >&2
 	exit 1
@@ -27,6 +29,7 @@ fixture="$tmp_dir/fixture"
 mkdir -p "$fixture/scripts" "$fixture/core"
 cp "$root_dir/scripts/build-release.sh" "$fixture/scripts/"
 cp "$resolver" "$fixture/scripts/"
+cp "$release_resolver" "$fixture/scripts/"
 cat > "$fixture/go.mod" <<'EOF'
 module example.com/provenance-fixture
 

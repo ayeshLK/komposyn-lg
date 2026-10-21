@@ -14,7 +14,9 @@
 
 param(
     [string]$OldTag = 'v0.6.0',
-    [Parameter(Mandatory=$true)][string]$CandidateDir
+    [Parameter(Mandatory=$true)][string]$CandidateDir,
+    [string]$ExpectedCliVersion = '',
+    [string]$ExpectedCoreVersion = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -33,11 +35,17 @@ $dataDir = Join-Path $temp 'data'
 $sourceDir = Join-Path $temp 'source'
 $binary = Join-Path $installDir 'komposyn-lg.exe'
 $candidateDir = (Resolve-Path -LiteralPath $CandidateDir).Path
+if (-not $ExpectedCoreVersion) {
+    $resolver = Join-Path $PSScriptRoot 'resolve-release-core-version.sh'
+    $ExpectedCoreVersion = (& bash $resolver | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0 -or -not $ExpectedCoreVersion) { throw 'could not resolve validated release core version' }
+}
 $windowsArchitectureHelper = Join-Path $PSScriptRoot 'windows-architecture.ps1'
 . $windowsArchitectureHelper
 $target = "windows_$(Get-KomposynWindowsArchitecture)"
 if ($env:EXPECTED_TARGET -and $env:EXPECTED_TARGET -ne $target) { throw "detected native Windows target $target does not match runner matrix $env:EXPECTED_TARGET" }
 $candidateVersion = ((Get-Content (Join-Path $candidateDir 'SHA256SUMS') | Select-Object -First 1) -replace '^# version=v?','').Trim()
+if ($ExpectedCliVersion -and $candidateVersion -cne $ExpectedCliVersion) { throw "candidate manifest version $candidateVersion does not match prepared CLI version $ExpectedCliVersion" }
 New-Item -ItemType Directory -Path $oldDir,$installDir,$dataDir,$sourceDir -Force | Out-Null
 function Invoke-CLI([string[]]$Arguments) {
     $output = & $script:binary @Arguments
@@ -127,7 +135,7 @@ db.commit()
     if (Get-Process -Id $oldPid -ErrorAction SilentlyContinue) { throw 'historical collector process survived cooperative stop' }
     Get-Process -Id $newStatus.pid -ErrorAction Stop | Out-Null
     $versionOutput = (& $binary version | Out-String).Trim()
-    if ($versionOutput -notmatch "komposyn-lg $candidateVersion \(core 0\.8\.0\)") { throw "candidate reports unexpected CLI/core versions: $versionOutput" }
+    & (Join-Path $PSScriptRoot 'verify-cli-version-output.ps1') -Output $versionOutput -ExpectedCliVersion $candidateVersion -ExpectedCoreVersion $ExpectedCoreVersion
     $nativeMetadata = (& go version -m $binary | Out-String)
     $expectedGoArch = if ($target -eq 'windows_arm64') { 'arm64' } else { 'amd64' }
     if ($nativeMetadata -notmatch "GOOS=windows" -or $nativeMetadata -notmatch "GOARCH=$expectedGoArch") { throw "installed candidate architecture differs from native target $target`n$nativeMetadata" }

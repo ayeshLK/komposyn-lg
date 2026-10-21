@@ -13,6 +13,16 @@ Native upgrade checks verify schema-15 backup recovery and refusal of schema 17
 by the shipped older binaries. See
 [core compatibility and coordinated security releases](core-compatibility-security.md).
 
+The release preparation job resolves the core version from the exact validated
+release commit using `scripts/resolve-release-core-version.sh`. That resolver
+rejects replacements, Go workspaces, and any core version outside the reviewed
+release pin. The shared value is passed to native runtime, Unix and Windows
+active-upgrade, and post-publication checks. Standalone active-upgrade verifier
+calls keep their existing arguments and resolve the same expected version from
+the checkout; callers may also pass the independently prepared CLI/core values
+explicitly as the third/fourth shell arguments or `-ExpectedCliVersion` and
+`-ExpectedCoreVersion` in PowerShell.
+
 ## Publishing
 
 The manually dispatched publication workflow resolves and validates the merged
