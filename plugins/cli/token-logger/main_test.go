@@ -725,9 +725,11 @@ func TestImportJSONOutcomeContract(t *testing.T) {
 }
 
 func TestImportWarningAndPendingExitBehavior(t *testing.T) {
+	const codexMetadata = `{"type":"session_meta","payload":{"id":"synthetic-session","project_id":"synthetic-project","cwd":"/synthetic/project","model":"gpt-test"}}` + "\n"
 	t.Run("unsupported usage warns", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "unsupported.jsonl")
-		if err := os.WriteFile(path, []byte(`{"type":"token_usage_record","timestamp":"2026-10-11T00:00:00Z","input_tokens":1}`+"\n"), 0o600); err != nil {
+		contents := codexMetadata + `{"type":"token_usage_record","timestamp":"2026-10-11T00:00:00Z","input_tokens":1}` + "\n"
+		if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		var stdout, stderr bytes.Buffer
@@ -745,7 +747,7 @@ func TestImportWarningAndPendingExitBehavior(t *testing.T) {
 
 	t.Run("incomplete final line remains retryable", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "partial.jsonl")
-		if err := os.WriteFile(path, []byte(`{"type":"token_count","payload":`), 0o600); err != nil {
+		if err := os.WriteFile(path, []byte(codexMetadata+`{"type":"token_count","payload":`), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		var stdout, stderr bytes.Buffer
@@ -763,10 +765,11 @@ func TestImportWarningAndPendingExitBehavior(t *testing.T) {
 
 	t.Run("warning and pending remain independent in text", func(t *testing.T) {
 		sourceDir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(sourceDir, "unsupported.jsonl"), []byte(`{"type":"token_usage_record","input_tokens":1}`+"\n"), 0o600); err != nil {
+		unsupported := codexMetadata + `{"type":"token_usage_record","input_tokens":1}` + "\n"
+		if err := os.WriteFile(filepath.Join(sourceDir, "unsupported.jsonl"), []byte(unsupported), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(sourceDir, "partial.jsonl"), []byte(`{"type":"token_count","payload":`), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(sourceDir, "partial.jsonl"), []byte(codexMetadata+`{"type":"token_count","payload":`), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		var stdout, stderr bytes.Buffer
