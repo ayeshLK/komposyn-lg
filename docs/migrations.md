@@ -1,19 +1,22 @@
 # Database migrations
 
-The CLI opens the SQLite database through the KompoSyn core library. Core
-v0.8.0 advanced schema 15 to 16 by adding private parser checkpoints for
-validated append continuation. Core v0.9.0 advances schema 16 to 17 by adding
-recorded project-name origin. Existing projects receive `unknown`; the
-migration does not infer or repair historical provenance. Checkpoints contain
-bounded normalized parser state and fingerprints, not provider source text.
-Migrations preserve existing events, identities, settings, consent and data
-paths, and create a verified pre-migration backup before changing the database.
-The project-inspection CLI integration requires published core v0.9.0.
+The CLI opens its SQLite database through the separately versioned KompoSyn
+core library. Numbered migrations are forward-only and are applied on open
+when the selected core supports them. A newer unsupported schema is rejected
+without mutation. Do not manually edit the migration ledger or reuse a migrated
+database with an older executable.
 
-Before upgrading, keep a backup of the full data directory. If migration fails,
-preserve the original files and use the recovery procedure in
-[Backups and recovery](backups.md). Do not manually edit the migration ledger or
-reuse an upgraded database with an older binary.
+Core migrations preserve existing events, identities, settings, consent, and
+data paths unless a documented migration adds metadata. The project-name-origin
+migration records `unknown` for existing projects; it does not infer or repair
+historical provenance. Parser checkpoints contain bounded normalized state
+and fingerprints, not provider source text.
 
-For migration history, implementation details, and supported rollback evidence,
-see the [v0.8.0 core migration guide](https://github.com/ayeshLK/komposyn/blob/v0.8.0/docs/migrations.md).
+Before an upgrade, keep a complete data-directory backup. When a migration is
+required, the CLI verifies a pre-migration SQLite backup before changing the
+database. If migration or recovery fails, preserve the original files. Follow
+[backups and recovery](backups.md) to select a compatible binary from the
+backup's recorded schema. Installer behavior is covered in [upgrades](upgrades.md).
+
+For core migration history and implementation details, see the
+[core migration guide](https://github.com/ayeshLK/komposyn/blob/v0.9.0/docs/migrations.md).

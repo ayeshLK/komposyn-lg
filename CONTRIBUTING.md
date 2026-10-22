@@ -18,12 +18,13 @@ core source without cross-repository credentials. See [core compatibility and
 coordinated security releases](docs/core-compatibility-security.md) for
 dependency-update review, version support, and private advisory coordination.
 
-Use focused tests while iterating, then run `go mod verify`, `go vet ./...`,
-`go test ./...`, `go test -race ./...`, and `make check`. For installer or
-release changes, also run the platform lifecycle checks and verify signatures,
-checksums, upgrade preservation, and data-preserving uninstall. Report exact
-commands and results in pull requests. Never create or move release tags
-manually; use the reviewed Release Please and protected publication workflow.
+Use the [testing guide](docs/contributing/testing.md) for required checks and
+change-specific validation. Release and installer changes must also satisfy
+[release verification](docs/release-verification.md), including native
+lifecycle, signature, checksum, upgrade-preservation, and data-preserving
+uninstall gates. Report exact commands and results in pull requests. Never
+create or move release tags manually; use the reviewed Release Please and
+protected publication workflow.
 
 ## Reporting problems and contributing
 
