@@ -18,6 +18,14 @@
 * fail release preparation on core resolution errors ([08ef8d4](https://github.com/ayeshLK/komposyn-lg/commit/08ef8d41dd931f801d61d91ef97c8662b3b50049))
 * validate schema 17 upgrade path ([174b367](https://github.com/ayeshLK/komposyn-lg/commit/174b367b75705432dd42cfbf2d6c9e8d34c863b1))
 
+### Compatibility and upgrade notes
+
+* This CLI release pins KompoSyn core v0.9.0. CLI and core versions remain independent.
+* Opening an existing database upgrades it to schema 17 when necessary, after creating a verified pre-migration backup. Older CLI versions that support only earlier schemas cannot open the upgraded database. Preserve the backup; returning to an older binary requires restoring compatible pre-upgrade data separately. There is no automatic down-migration.
+* `/projects` continues to list all known projects; its usage measures reflect the selected range. New `/projects inspect <row|id>` and `projects inspect <project-id>` commands distinguish selected-range activity, persisted history, and stored sessions. Inspection JSON uses core format version 2; existing report JSON/CSV and protocol v1 remain unchanged.
+* Inspection omits raw identity/provenance text, but stable digests and exact activity metrics remain potentially identifying. Review results and returned errors before sharing.
+* Upgrading does not automatically remove zero-usage projects or repair every historical name. Historical name/source provenance can remain unavailable; valid inactive and metadata-only sessions are preserved.
+
 ## [0.9.0](https://github.com/ayeshLK/komposyn-lg/compare/v0.8.2...v0.9.0) (2026-10-19)
 
 
