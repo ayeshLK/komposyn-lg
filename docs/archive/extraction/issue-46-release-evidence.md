@@ -1,5 +1,8 @@
 # Issue #46 release and cutover evidence
 
+> **Historical record.** Historical extraction and first standalone publication evidence for ayeshLK/komposyn#46. This is the core repository issue #46, not komposyn-lg release PR #46. The evidence is point-in-time and does not establish current release readiness. See maintained [release verification](../../release-verification.md).
+
+
 This ledger records verified gates and separates completed publication evidence
 from the remaining core ownership cleanup. A passing smoke test is not full
 lifecycle coverage.
@@ -9,10 +12,10 @@ lifecycle coverage.
 | Item | Verified value | Evidence |
 | --- | --- | --- |
 | Final combined/core baseline | `v0.7.0`; final combined CLI version `0.7.0` | Core release and tag history |
-| Extraction commit | `d66b4117d8b7771f9c3c22b3b251e19054ba9e88` | [Extraction provenance](EXTRACTION.md) |
+| Extraction commit | `d66b4117d8b7771f9c3c22b3b251e19054ba9e88` | [Extraction provenance](./EXTRACTION.md) |
 | First standalone CLI | `v0.8.0`, requiring core `v0.7.0` | `go.mod`, release metadata |
 | Standalone release source | `9369bc327e70928c69b332a4aa54ad38de5a226c` | [Publication run 39102174717](https://github.com/ayeshLK/komposyn-lg/actions/runs/39102174717) |
-| Harness protocol / SQLite schema | `1` / `15` | [Protocol contract](HARNESS_PROTOCOL.md), core migration ledger |
+| Harness protocol / SQLite schema | `1` / `15` | [Protocol contract](../../HARNESS_PROTOCOL.md), core migration ledger |
 | Published `SHA256SUMS` | SHA-256 `70e7d41f001f167f625d8f8cf4f31f7cbc241c2c6b1e05329310adc2aba0b527` | Published release assets |
 
 ## Completed publication evidence
@@ -37,7 +40,7 @@ Installers must never accept both identities for new artifacts.
 
 - Minimum supported core and current CLI dependency pin are both `v0.7.0`.
   Normal CLI CI tests that pin once; an extra identical minimum-version job
-  would be redundant. See [core compatibility and coordinated security](core-compatibility-security.md).
+  would be redundant. See [core compatibility and coordinated security](../../core-compatibility-security.md).
 - Core PR [#133](https://github.com/ayeshLK/komposyn/pull/133) proposes a CI
   job for the public standalone CLI suite using a temporary dependency override
   in disposable storage, with read-only permissions and no cross-repository

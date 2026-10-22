@@ -10,20 +10,20 @@ permanent `replace`, and keep domain behavior in core. Preserve the library/CLI
 boundary and the protocol-v1 contract. Do not capture prompts, responses,
 credentials, or provider source content, and do not add telemetry.
 
-CLI v0.8.0 historically pinned core v0.7.0, and CLI v0.8.1 pins core v0.7.1.
-The next standalone CLI release candidate raises both the minimum supported
-core version and current pin to v0.8.0, so normal CI covers that version once.
-Core candidate CI also runs the public CLI suite against the proposed
-core source without cross-repository credentials. See [core compatibility and
-coordinated security releases](docs/core-compatibility-security.md) for
-dependency-update review, version support, and private advisory coordination.
+Published CLI v0.10.0 pins core v0.9.0, which is also the current minimum
+supported core version. Earlier release
+mappings are recorded in [core compatibility and coordinated security
+releases](docs/core-compatibility-security.md), which also describes dependency
+review and private advisory coordination. Core candidate CI runs the public CLI
+suite against proposed core source using an isolated temporary replacement.
 
-Use focused tests while iterating, then run `go mod verify`, `go vet ./...`,
-`go test ./...`, `go test -race ./...`, and `make check`. For installer or
-release changes, also run the platform lifecycle checks and verify signatures,
-checksums, upgrade preservation, and data-preserving uninstall. Report exact
-commands and results in pull requests. Never create or move release tags
-manually; use the reviewed Release Please and protected publication workflow.
+Use the [testing guide](docs/contributing/testing.md) for required checks and
+change-specific validation. Release and installer changes must also satisfy
+[release verification](docs/release-verification.md), including native
+lifecycle, signature, checksum, upgrade-preservation, and data-preserving
+uninstall gates. Report exact commands and results in pull requests. Never
+create or move release tags manually; use the reviewed Release Please and
+protected publication workflow.
 
 ## Reporting problems and contributing
 

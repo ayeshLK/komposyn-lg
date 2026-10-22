@@ -5,26 +5,11 @@ provider transcript directories remain outside Komposyn ownership.
 
 ## Locate the data directory
 
-The data directory is selected in this order:
-
-1. An explicit command-line `--data-dir` or harness initialize `data_dir`.
-2. `TOKEN_LOGGER_DATA_DIR`.
-3. `$HOME/.komposyn/token-logger/data` (or the equivalent under the resolved
-   Windows user profile).
-
-`XDG_DATA_HOME` does not set the new default. When neither an explicit path nor
-the environment variable is set, Komposyn discovers prior state in
-`$XDG_DATA_HOME/token-logger` (or `$HOME/.local/share/token-logger` if XDG is
-unset). It reuses a legacy directory only when it contains a Komposyn database,
-SQLite sidecar, or `settings.json` and the new directory has no state. If both
-have state, the new location wins, a warning is printed, and no merge occurs;
-set `TOKEN_LOGGER_DATA_DIR` to the legacy directory to use it. The selected
-path is absolute. If the home directory cannot be resolved, set
-`TOKEN_LOGGER_DATA_DIR`; the current directory is never used as a fallback.
-
-The primary files are `token-logger.db` and `settings.json`. SQLite may also
-create `token-logger.db-wal` and `token-logger.db-shm` while the database is
-active.
+Use `komposyn-lg settings` to inspect the selected directory. Selection
+precedence, legacy-directory discovery, settings, and collector startup policy
+are documented in [configuration](configuration.md). The operational database
+files are `token-logger.db` and `settings.json`; SQLite may also create WAL and
+SHM sidecars while the database is active.
 
 ## Health and collection
 

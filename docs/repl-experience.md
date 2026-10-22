@@ -19,25 +19,8 @@ the navigation model. The following inventory drives the presentation changes.
 | Setup/query errors and diagnostic consent | Existing visible errors and explicit consent flow | `/report-issue` for pending diagnostics |
 | Editing/submission guidance | Existing terminal-specific hint | `/help` and usage guide |
 
-## Research and decisions
-
-Official documentation reviewed on 2026-10-19:
-
-- [SQLite CLI](https://www.sqlite.org/cli.html) describes a brief startup banner
-  and dedicated commands for help, database details, and versions. Apply the
-  brief introduction and explicit inspection commands here.
-- [PostgreSQL psql](https://www.postgresql.org/docs/current/app-psql.html)
-  provides `\conninfo` for connection details and configurable prompts and
-  result formatting. Keep scope visible in the prompt; make environment details
-  available separately from report results.
-- [IPython magics](https://ipython.readthedocs.io/en/stable/interactive/magics.html)
-  exposes configuration through `%config` and reference help through `%quickref`.
-  Keep help and inspection easy to discover without printing their full contents
-  at startup.
-
-These are design inferences from the tools, rather than a requirement that
-KompoSyn adopt their command syntax. Plain text and whitespace provide the
-hierarchy across terminals, narrow windows, and piped interactive input.
+The comparative research and completed design rationale are preserved in the
+[historical research note](archive/investigations/repl-experience-research.md).
 
 ## Resulting layout
 
@@ -73,7 +56,7 @@ Example detail view:
 
 ```text
 Status
-  komposyn-lg 0.8.2 (core 0.8.0)
+  komposyn-lg <cli-version> (core <core-version>)
   data directory: <selected data directory>
 
 Collection

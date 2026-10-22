@@ -1,31 +1,39 @@
 # Backups and recovery
 
-KompoSyn Token Logger keeps its database, settings, consent choices, and local
-diagnostics in the selected data directory. Stop all collectors before copying
-or restoring these files. Copy the complete data directory, including SQLite
-WAL and SHM sidecars when present; never copy a live database file by itself.
+KompoSyn stores its database, settings, consent choices, and local diagnostics
+in the selected data directory. Stop all collectors before copying or restoring
+files. Copy the complete data directory, including SQLite WAL and SHM sidecars
+when present; never copy a live database file by itself. The selected location
+and precedence rules are documented in [configuration](configuration.md).
 
-The CLI creates and verifies a private SQLite backup before an upgrade that
-advances the schema. Same-schema executable upgrades do not create a migration
-backup. Keep any `.komposyn-pre-migration-*.sqlite` files with the protected
-data directory until the upgrade has been validated.
+## Before an upgrade
 
-The next CLI release candidate updates core from v0.7.1 to v0.9.0. Core v0.8.0
-introduced schema 16 with private parser checkpoints; core v0.9.0 adds migration
-17 for recorded project-name origin. On first open, migrations advance schema
-15 to 17 and create a verified backup recording the source and target schema
-and core version. Keep a separate full data directory backup before upgrading.
-Stop collectors before copying or restoring data. After migration, CLI v0.8.1
-and CLI v0.9.0/core v0.8.0 refuse the schema-17 database without changing it.
-To recover, restore the verified schema-15 migration backup into a separate
-data directory, then use a CLI/core version that supports schema 15. Keep the
-original backup; opening a recovery copy may migrate it forward and create
-another backup.
+Keep a separate copy of the complete data directory before changing versions.
+When an upgrade needs a schema migration, the CLI creates and verifies a
+private SQLite backup before applying the migration. Same-schema executable
+upgrades do not create a migration backup. Keep `.komposyn-pre-migration-*.sqlite`
+files protected with the rest of the data until the upgrade is validated. The
+backup records its source schema, target schema, and core version; its schema is
+not necessarily the same as another historical backup. Published mappings are
+CLI v0.8.1/core v0.7.1 for schema 15, CLI v0.8.2 and v0.9.0/core v0.8.0
+for schema 16, and CLI v0.10.0/core v0.9.0 for schema 17. Use the backup's
+recorded source schema and core version when selecting a recovery executable;
+not every older backup is schema 15.
 
-For recovery, stop the collector and restore a complete saved data directory.
-For a migration rollback, restore the verified pre-migration database into a
-separate working data directory and run a CLI version that supports its schema.
-Do not point an older CLI at the upgraded database.
+## Restore or recover from a migration
 
-The core library documents its migration backup format and APIs in the
-[v0.8.0 core backup guide](https://github.com/ayeshLK/komposyn/blob/v0.8.0/docs/migration-backups.md).
+Stop every collector and close the CLI before restoring data. For ordinary
+recovery, restore the complete saved data directory. For migration recovery,
+use the verified pre-migration backup that belongs to that upgrade, restore it
+into a separate data directory, and open it only with a CLI/core version that
+supports the backup's recorded schema. Check the backup metadata before
+choosing the executable. Do not point an older binary at a migrated database.
+
+Migrations are forward-only; the CLI does not automatically down-migrate. A
+newer unsupported schema is refused without migration. Preserve the original
+data and backup if opening or restoration fails. See [database migrations](migrations.md)
+for schema behavior and [upgrades](upgrades.md) for installer and collector
+lifecycle details.
+
+The core library describes its migration backup format and APIs in the
+[core migration backup guide](https://github.com/ayeshLK/komposyn/blob/v0.9.0/docs/migration-backups.md).

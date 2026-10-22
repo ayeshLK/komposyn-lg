@@ -1,50 +1,37 @@
 # Upgrades and data preservation
 
-The initial release upgrade operation is deliberately simple: rerun the latest
-standalone installer. It replaces the executable while reusing the existing
-data directory.
+Upgrade by rerunning the latest signed standalone installer. It replaces the
+executable while reusing the selected data directory. See [installation](installation.md)
+for verified installation commands.
 
 The following local state must survive an upgrade:
 
 - `token-logger.db`, including its migration history and usage data
-- `settings.json`
-- onboarding and collector preferences
+- `settings.json`, onboarding state, and collector preferences
 - local diagnostics and their review state
 - consent choices represented by local settings
 - registered collector sources and prior runtime history
 
-When the new binary opens an existing database that needs migration, it creates
-and verifies a private SQLite online backup before applying numbered
-migrations. A backup failure stops the migration. The default backup lives
-beside the database, contains source/target schema and core-version metadata,
-and is available through `Store.MigrationBackupPath` to library callers. Do not
-copy or edit database files while the CLI is running. Keep migration backups
-with the rest of the protected local data.
+When the selected core needs a schema migration, it creates and verifies a
+private SQLite online backup before applying numbered migrations. A backup
+failure stops the migration. A newer unsupported schema is refused without
+changing database contents or existing WAL sidecars. Older published binaries
+may not have this protection; never open an upgraded database with an older
+executable. See [database migrations](migrations.md) and [backups and recovery](backups.md)
+for schema compatibility and restoration steps.
 
-A newer unsupported schema is inspected before writable configuration and is
-refused without changing database contents, timestamps, or existing WAL
-sidecars. Older published binaries do not have this protection; rollback to
-them may alter a newer database. Restore a verified pre-migration backup into a
-separate working directory and use a binary compatible with that backup's
-schema. Stop all collectors before restoring or replacing data.
+The installer requests cooperative stop from an active managed collector
+before replacement. It restarts only a previously active detached background
+collector. Foreground and embedded REPL collection remain stopped with explicit
+manual-resume guidance, so an upgrade cannot silently change collection mode
+or roots. The installer never terminates a persisted PID. Set
+`TOKEN_LOGGER_DATA_DIR` during upgrade when using a non-default data directory;
+see [configuration](configuration.md) for path selection.
 
-The next CLI release candidate pins core v0.9.0. Core v0.8.0 introduced schema
-16 and private append checkpoints; v0.9.0 adds schema 17 for recorded
-project-name origin, leaving legacy provenance unknown. Upgrading from CLI
-v0.8.1/core v0.7.1 migrates the existing schema-15 database through schema 17
-and retains a verified schema-15 backup beside it. CLI v0.8.1 and CLI
-v0.9.0/core v0.8.0 refuse the migrated database without mutation. For rollback,
-restore the pre-migration database into a separate data directory and use a CLI
-that supports schema 15; do not point an older executable at schema 17.
+Uninstall follows the same stop-before-remove rule and leaves the database,
+settings, diagnostics, and consent state intact. Provider-owned transcripts are
+not removed.
 
-In-CLI self-updating is deferred. Release installers verify checksums and Cosign
-signatures; do not bypass those checks by downloading an unverified binary.
-
-The installer checks the selected data directory for an active managed
-collector and requests cooperative stop before replacement. Only a previously
-detached background collector is restarted automatically. Foreground and
-embedded REPL collection remain stopped with explicit manual-resume guidance,
-so an upgrade cannot silently change collection mode or roots. The installer
-never terminates a persisted PID. Set `TOKEN_LOGGER_DATA_DIR` during upgrade
-for a non-default data directory. Uninstall follows the same stop-before-remove
-rule and leaves all SQLite/settings state intact.
+In-CLI self-updating is not provided. Release installers verify checksums and
+Cosign signatures; do not bypass those checks by downloading an unverified
+binary.

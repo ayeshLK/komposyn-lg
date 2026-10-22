@@ -3,25 +3,35 @@
 Release Please prepares the standalone CLI version and changelog in a reviewed
 pull request. CLI and core versions advance independently: the release builder
 uses the requested CLI tag for `cli_version` and the exact pinned core module
-version for core `plugin_version`. The first standalone release was CLI
-`v0.8.0`, pinned to core `v0.7.0`; CLI `v0.8.1` pins core `v0.7.1`. The next
-release candidate pins the published `github.com/ayeshLK/komposyn v0.9.0` and
-sets it as the minimum supported core version. Normal CLI CI tests that version
-once instead of adding a redundant second job. Core v0.8.0 migrated schema 15
-to 16, and core v0.9.0 migrates 16 to 17 with recorded project-name origin.
-Native upgrade checks verify schema-15 backup recovery and refusal of schema 17
-by the shipped older binaries. See
-[core compatibility and coordinated security releases](core-compatibility-security.md).
+version for core `plugin_version`. The current published CLI is v0.10.0 and
+pins the published core v0.9.0; that is also the minimum supported core
+version. Core v0.8.0 migrated schema 15 to 16, and core v0.9.0 migrated 16 to
+17 with recorded project-name origin. The version map and historical schema
+compatibility are in [core compatibility](core-compatibility-security.md).
 
-The release preparation job resolves the core version from the exact validated
-release commit using `scripts/resolve-release-core-version.sh`. That resolver
-rejects replacements, Go workspaces, and any core version outside the reviewed
-release pin. The shared value is passed to native runtime, Unix and Windows
-active-upgrade, and post-publication checks. Standalone active-upgrade verifier
-calls keep their existing arguments and resolve the same expected version from
-the checkout; callers may also pass the independently prepared CLI/core values
-explicitly as the third/fourth shell arguments or `-ExpectedCliVersion` and
-`-ExpectedCoreVersion` in PowerShell.
+The release preparation job resolves the expected core version from the exact
+validated release commit using `scripts/resolve-release-core-version.sh`. That
+resolver rejects replacements, Go workspaces, and any core version outside the
+reviewed release pin. The shared value is passed to native runtime, Unix and
+Windows active-upgrade, and post-publication checks. Standalone active-upgrade
+verifier calls keep their existing arguments and resolve the same expected
+version from the checkout; callers may also pass the independently prepared
+CLI/core values explicitly as the third/fourth shell arguments or
+`-ExpectedCliVersion` and `-ExpectedCoreVersion` in PowerShell.
+
+## Required release gates
+
+A release is ready for publication only when the protected workflow passes on
+the exact reviewed commit and tag. It verifies signed runtime metadata and
+protocol smoke natively for all six targets: Linux, macOS, and Windows on
+amd64 and arm64. Cross-compilation does not count as native runtime evidence.
+
+The workflow also runs signed active-collector upgrade checks on every target
+from the historical CLI v0.6.0 and v0.8.1 releases. These checks cover the
+existing data and migration path, backup recovery, refusal of unsupported newer
+schemas, collector restart, and data-preserving uninstall. Current schema-change
+coverage and historical lifecycle evidence remain release gates; ordinary CI
+or a candidate build does not replace them.
 
 ## Publishing
 
@@ -47,18 +57,19 @@ Archive and checksum manifest signatures accompany each release.
 ## Local verification
 
 Use an empty output directory outside the repository. The local build does not
-create a tag:
+create a tag and cannot provide signed publication or native six-target
+evidence:
 
 ```sh
 go mod verify
 go vet ./...
 go test ./...
 go test -race ./...
-make release VERSION=v0.8.1 OUTPUT_DIR=/tmp/komposyn-lg-release-test
+make release VERSION=v0.10.0 OUTPUT_DIR=/tmp/komposyn-lg-release-test
 bash scripts/verify-release.sh /tmp/komposyn-lg-release-test
 ```
 
 The lifecycle verifier checks manifest checksums, archive contents, initial
 settings/database creation, executable replacement, collector restart, and
-data-preserving uninstall. The publication workflow also tests native
-installers. Cross-compilation is not runtime evidence for any target.
+data-preserving uninstall. The protected publication workflow supplies the
+signed native runtime and historical active-upgrade evidence described above.

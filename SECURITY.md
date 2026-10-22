@@ -17,8 +17,9 @@ for new standalone artifacts.
 ## Supported versions
 
 Only the latest published standalone CLI release receives security fixes. As
-of this policy's adoption, that release is `v0.8.1`; when a newer CLI release
-is published, older releases become unsupported. The `master` branch is the
+of 2026-10-22, that release is
+[`v0.10.0`](https://github.com/ayeshLK/komposyn-lg/releases/tag/v0.10.0); when a
+newer CLI release is published, older releases become unsupported. The `master` branch is the
 development source for future releases, not a separately supported install or
 release line. Security fixes for the supported release are developed on
 `master` and delivered in a new signed release. Users should install the latest
