@@ -1,6 +1,6 @@
 # Issue #42 project inspection integration evidence
 
-> **Historical record.** Historical implementation and candidate-validation evidence for CLI issue #42, coordinated under komposyn-lg issue #41. This record reflects its original candidate and release context; it is not current release-readiness evidence. See the maintained [CLI reference](../../cli-reference.md), [privacy guide](../../privacy.md), and [release verification requirements](../../release-verification.md).
+> **Historical record.** Historical project-inspection implementation and candidate-validation evidence for CLI issue #42 using published core v0.9.0, coordinated under komposyn-lg issue #41. This record reflects its original candidate and release context; it is not current release-readiness evidence. See the maintained [CLI reference](../../cli-reference.md), [privacy guide](../../privacy.md), and [release verification requirements](../../release-verification.md).
 
 
 This development evidence is for CLI issue [#42](https://github.com/ayeshLK/komposyn-lg/issues/42), coordinated with parent issue [#41](https://github.com/ayeshLK/komposyn-lg/issues/41). The inspection API is now available in published core v0.9.0 and the CLI dependency is pinned to that release. This is not standalone release evidence: ordinary merged-master CI, native six-target validation, and signed lifecycle gates remain separate.

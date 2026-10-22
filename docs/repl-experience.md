@@ -56,7 +56,7 @@ Example detail view:
 
 ```text
 Status
-  komposyn-lg 0.8.2 (core 0.8.0)
+  komposyn-lg <cli-version> (core <core-version>)
   data directory: <selected data directory>
 
 Collection

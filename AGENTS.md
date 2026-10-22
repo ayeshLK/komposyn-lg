@@ -19,5 +19,7 @@ Actions to immutable commit SHAs and keep workflow permissions least-privilege.
 
 Run `go mod verify`, `go vet ./...`, `go test ./...`, `go test -race ./...`,
 and the repository's `make check` before a release. Release readiness also
-requires the native six-target and historical lifecycle evidence in the
-issue #46 handoff; cross-compilation is not runtime evidence.
+requires the native six-target signed runtime and historical active-upgrade
+evidence described in
+[docs/release-verification.md](docs/release-verification.md).
+Cross-compilation is not runtime evidence.

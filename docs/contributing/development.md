@@ -43,7 +43,7 @@ with a fresh output directory. Local builds do not create tags:
 
 ```sh
 bash -n scripts/*.sh
-make release VERSION=v0.8.1 OUTPUT_DIR=/tmp/komposyn-lg-release-test
+make release VERSION=v0.10.0 OUTPUT_DIR=/tmp/komposyn-lg-release-test
 bash scripts/verify-release.sh /tmp/komposyn-lg-release-test
 ```
 

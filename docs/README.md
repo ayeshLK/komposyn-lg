@@ -1,20 +1,44 @@
 # Documentation
 
+## User guides
+
 - [Getting started](getting-started.md) — install and run the CLI.
-- [CLI reference](cli-reference.md) — commands, flags, and output formats.
-- [Configuration](configuration.md) — settings, data directories, and consent.
-- [Operations](operations.md) and [troubleshooting](troubleshooting.md) —
-  collection and local data behavior.
+- [Installation](installation.md) and [upgrades](upgrades.md) — signed setup,
+  upgrades, and uninstall.
+- [CLI reference](cli-reference.md) — authoritative commands, flags,
+  arguments, and output formats.
+- [Configuration](configuration.md) — settings, data directories, consent,
+  and collector startup policy.
+- [Operations](operations.md) — collection and local data.
 - [Usage and reports](usage.md) — report formats and interpretation.
-- [Harness protocol v1](HARNESS_PROTOCOL.md) — JSONL transport contract.
-- [Installation](installation.md), [upgrades](upgrades.md), and
-  [release verification](release-verification.md) — signed releases and data
-  preservation.
-- [Core compatibility and coordinated security releases](core-compatibility-security.md)
-  — supported core versions, dependency review, and private release coordination.
+- [Backups](backups.md), [migrations](migrations.md), and
+  [troubleshooting](troubleshooting.md) — recovery and diagnosis.
 - [Privacy](privacy.md) and [security model](security-model.md) — local data,
   disclosure, and vulnerability reporting.
-- [Development](contributing/development.md), [testing](contributing/testing.md),
-  [pull requests](contributing/pull-requests.md), [collector resource
-  measurements](contributing/resource-measurements.md), and
-  [Windows console testing](contributing/windows-console-testing.md).
+
+## Contributor guides
+
+- [Development](contributing/development.md) and
+  [pull requests](contributing/pull-requests.md) — contributor workflow.
+- [Testing](contributing/testing.md) — checks and change-specific coverage.
+- [Collector resource measurements](contributing/resource-measurements.md) —
+  reproducible process measurements.
+- [Windows console testing](contributing/windows-console-testing.md) — native
+  input and terminal behavior.
+- [REPL information hierarchy](repl-experience.md) — maintained interaction
+  rules and presentation guidance.
+
+## Release and compatibility
+
+- [Release verification](release-verification.md) — current signed publication
+  procedure and gates.
+- [Core compatibility and coordinated security releases](core-compatibility-security.md)
+  — supported versions, dependency review, and private coordination.
+- [Harness protocol v1](HARNESS_PROTOCOL.md) — versioned JSONL transport
+  contract.
+
+## Historical archive
+
+- [Archive index](archive/README.md) — historical performance reports,
+  investigations, extraction records, and release highlights. These records
+  preserve their original claims and do not establish current release readiness.

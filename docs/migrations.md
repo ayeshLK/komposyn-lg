@@ -6,6 +6,11 @@ when the selected core supports them. A newer unsupported schema is rejected
 without mutation. Do not manually edit the migration ledger or reuse a migrated
 database with an older executable.
 
+The current published mapping is CLI v0.10.0/core v0.9.0 with schema 17. Core
+v0.8.0 advanced schema 15 to 16 with private append checkpoints; core v0.9.0
+advanced schema 16 to 17 with recorded project-name origin. Existing project
+origins remain `unknown`; the migration does not infer historical names.
+
 Core migrations preserve existing events, identities, settings, consent, and
 data paths unless a documented migration adds metadata. The project-name-origin
 migration records `unknown` for existing projects; it does not infer or repair
