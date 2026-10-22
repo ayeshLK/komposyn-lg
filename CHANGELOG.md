@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.10.0](https://github.com/ayeshLK/komposyn-lg/compare/v0.9.0...v0.10.0) (2026-10-21)
+
+
+### Features
+
+* add project inspection command ([bb25799](https://github.com/ayeshLK/komposyn-lg/commit/bb257990ed66ef0a24d47b8a4549490c2b42412c))
+* add project inspection command ([1e09565](https://github.com/ayeshLK/komposyn-lg/commit/1e0956515658302f080bf11422d5f6b13cfaaba1))
+
+
+### Bug Fixes
+
+* align signed release core version checks ([8025146](https://github.com/ayeshLK/komposyn-lg/commit/802514606e299d363a2660dc8882c7f1dd015d81))
+* align signed release core version checks ([0387e40](https://github.com/ayeshLK/komposyn-lg/commit/0387e40691e6fc18f8418e7eb7387b75cc56806f))
+* **cli:** skip imports with unknown adapters ([79da60c](https://github.com/ayeshLK/komposyn-lg/commit/79da60c7f29fa35f3d8673eb2ff2bb1782de7f05))
+* **cli:** skip imports with unknown adapters ([639c50b](https://github.com/ayeshLK/komposyn-lg/commit/639c50b2c7a471ba3d400bd3157b75f138991bfb))
+* fail release preparation on core resolution errors ([08ef8d4](https://github.com/ayeshLK/komposyn-lg/commit/08ef8d41dd931f801d61d91ef97c8662b3b50049))
+* validate schema 17 upgrade path ([174b367](https://github.com/ayeshLK/komposyn-lg/commit/174b367b75705432dd42cfbf2d6c9e8d34c863b1))
+
+### Compatibility and upgrade notes
+
+* This CLI release pins KompoSyn core v0.9.0. CLI and core versions remain independent.
+* Opening an existing database upgrades it to schema 17 when necessary, after creating a verified pre-migration backup. Older CLI versions that support only earlier schemas cannot open the upgraded database. Preserve the backup; returning to an older binary requires restoring compatible pre-upgrade data separately. There is no automatic down-migration.
+* `/projects` continues to list all known projects; its usage measures reflect the selected range. New `/projects inspect <row|id>` and `projects inspect <project-id>` commands distinguish selected-range activity, persisted history, and stored sessions. Inspection JSON uses core format version 2; existing report JSON/CSV and protocol v1 remain unchanged.
+* Inspection omits raw identity/provenance text, but stable digests and exact activity metrics remain potentially identifying. Review results and returned errors before sharing.
+* Upgrading does not automatically remove zero-usage projects or repair every historical name. Historical name/source provenance can remain unavailable; valid inactive and metadata-only sessions are preserved.
+
 ## [0.9.0](https://github.com/ayeshLK/komposyn-lg/compare/v0.8.2...v0.9.0) (2026-10-19)
 
 
