@@ -1,5 +1,8 @@
 # Issue #23 CLI resource baseline
 
+> **Historical record.** Historical measurement record for the CLI v0.8.0/core v0.7.0 baseline, captured for issue #23. It is diagnostic evidence for that host and fixture, not a current performance budget or release-readiness result. See the maintained [resource-measurement guide](../../contributing/resource-measurements.md).
+
+
 This report records the standalone CLI before-state for issue #23. It is a
 single-host diagnostic baseline from generated synthetic histories, not a
 performance budget or a claim about typical user workloads. It does not compare
@@ -70,7 +73,7 @@ CGO_ENABLED=0 go build -trimpath -ldflags '-s -w -X github.com/ayeshLK/komposyn/
 The completed run manifests, samples, and command logs were kept under
 `/tmp/issue23-baseline` on the measurement host and are intentionally not
 committed. Re-run the documented commands in
-[`resource-measurements.md`](contributing/resource-measurements.md) with an
+[`resource-measurements.md`](../../contributing/resource-measurements.md) with an
 `--artifacts` directory for new raw output. Preserve the executable flags,
 host, generated fixture parameters, poll interval, warmup, and measurement
 duration when comparing a future candidate.
@@ -78,4 +81,4 @@ duration when comparing a future candidate.
 This historical baseline used the published core `v0.7.0`, not the exact
 pre-optimization source commit requested for attribution. The matched
 before/after measurements using core commits `0943bc8` and `36fea986` are in
-[`issue-23-core-137-comparison.md`](issue-23-core-137-comparison.md).
+[`issue-23-core-137-comparison.md`](./issue-23-core-137-comparison.md).

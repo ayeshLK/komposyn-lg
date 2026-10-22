@@ -1,5 +1,8 @@
 # Issue #23: standalone CLI before-state baseline
 
+> **Historical record.** Historical baseline for CLI v0.8.0 against the core #137 before-state, with the recorded CLI/core commits, host, and fixture. It is limited to the recorded environment and does not establish current performance or release readiness. See the maintained [resource-measurement guide](../../contributing/resource-measurements.md).
+
+
 This report isolates the CLI measurements for the exact before-state of core
 issue #137. It records baseline behavior only; it does not make a before/after
 performance claim.
@@ -23,7 +26,7 @@ performance claim.
   `/tmp/issue23-core137/before` on the measurement host; they are not committed.
 
 This is distinct from the earlier historical baseline in
-[`issue-23-baseline-linux-amd64.md`](issue-23-baseline-linux-amd64.md), which
+[`issue-23-baseline-linux-amd64.md`](./issue-23-baseline-linux-amd64.md), which
 used published core `v0.7.0` source commit `d66b4117d8b7771f9c3c22b3b251e19054ba9e88`.
 
 ## Workloads and measurement window
@@ -103,7 +106,7 @@ CGO_ENABLED=0 go -C /tmp/cli-before build -trimpath -ldflags '-s -w -X github.co
 
 Run `scripts/measure-collector.py` using the workload flags recorded in the
 raw manifests and the matrix guidance in
-[`resource-measurements.md`](contributing/resource-measurements.md). Keep each
+[`resource-measurements.md`](../../contributing/resource-measurements.md). Keep each
 run's artifact directory outside the repository. Do not use the temporary
 override for release checks; it is intentionally refused by the release
 provenance guard.

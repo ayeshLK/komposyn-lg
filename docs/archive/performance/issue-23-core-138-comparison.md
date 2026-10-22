@@ -1,5 +1,8 @@
 # Issue #23: CLI measurements for core #138
 
+> **Historical record.** Historical comparison of CLI v0.8.0 with core #138 before and after states. Results and limitations apply only to the recorded synthetic workload and host; they do not establish current release readiness. See the maintained [resource-measurement guide](../../contributing/resource-measurements.md).
+
+
 This report measures the incremental effect of core #138 in the standalone
 CLI. The before source is core `36fea986b18d2c5ad32f4876b50412a03f9d933f`;
 the candidate is published core `v0.7.1`, tag commit

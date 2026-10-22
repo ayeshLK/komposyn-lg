@@ -1,5 +1,8 @@
 # Issue #23: CLI measurements for core #137
 
+> **Historical record.** Historical comparison of CLI v0.8.0 with core #137 before and after states. Results and limitations apply only to the recorded synthetic workload and host; they do not establish current release readiness. See the maintained [resource-measurement guide](../../contributing/resource-measurements.md).
+
+
 This report compares the CLI against core immediately before and after the
 single-acquisition optimization. It records process-level measurements and
 compatibility evidence. It does not set a performance budget or establish a
@@ -7,7 +10,7 @@ general latency or memory improvement.
 
 ## Provenance
 
-The original issue #23 baseline in [`issue-23-baseline-linux-amd64.md`](issue-23-baseline-linux-amd64.md)
+The original issue #23 baseline in [`issue-23-baseline-linux-amd64.md`](./issue-23-baseline-linux-amd64.md)
 used CLI `265bcd375cbd626232998ec9a3e3793ec09492f9` and the published core
 `v0.7.0` module (`h1:y7c65NSsBgcQ4Wo8Cwac903dP9dzQ/53wz1nJMh9vaA=`), whose
 source commit is `d66b4117d8b7771f9c3c22b3b251e19054ba9e88`. That historical
@@ -206,7 +209,7 @@ CGO_ENABLED=0 go -C /tmp/cli-candidate build -trimpath -ldflags '-s -w -X github
 
 Run the matched matrix with the committed harness; detailed fixture and
 sampling flags are recorded in each raw `manifest.json` and in
-[`resource-measurements.md`](contributing/resource-measurements.md). Do not run
+[`resource-measurements.md`](../../contributing/resource-measurements.md). Do not run
 release checks with a temporary replacement: the provenance guard is intended
 to reject it. Run compatibility tests with that exact replacement, and run
 `make check` separately against the normal published dependency pin.

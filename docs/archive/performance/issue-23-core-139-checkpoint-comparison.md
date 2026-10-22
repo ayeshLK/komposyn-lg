@@ -1,5 +1,8 @@
 # Issue #23: CLI measurements for core append checkpoints
 
+> **Historical record.** Historical checkpoint comparison using CLI v0.8.1 and core v0.7.1 versus the then-unreleased checkpoint candidate. This was not published-core integration or current release evidence. Preserve its sample limitations and results as recorded. See the maintained [resource-measurement guide](../../contributing/resource-measurements.md).
+
+
 This report compares the shipped standalone CLI against published core v0.7.1
 and the merged, not-yet-published core checkpoint implementation from [core
 PR #145](https://github.com/ayeshLK/komposyn/pull/145). The latest [issue #23

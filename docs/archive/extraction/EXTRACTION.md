@@ -1,5 +1,8 @@
 # Extraction provenance
 
+> **Historical record.** Historical extraction provenance for the first standalone CLI, based on the v0.7.0 combined-repository baseline. See maintained [release verification](../../release-verification.md) for current publication requirements.
+
+
 This candidate preserves the CLI source and tests from the accepted combined
 repository baseline commit:
 
