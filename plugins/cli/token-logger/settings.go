@@ -23,6 +23,9 @@ import (
 	"time"
 )
 
+const settingsLockTimeout = 2 * time.Minute
+const settingsLockRetryInterval = 25 * time.Millisecond
+
 // appSettings stores explicit local collector preferences. It contains no
 // provider credentials.
 type appSettings struct {
@@ -125,6 +128,99 @@ func saveSettings(path string, settings appSettings) error {
 		return fmt.Errorf("replace settings: %w", err)
 	}
 	return nil
+}
+
+// withLocalFileLock serializes one local coordination operation across
+// processes. Lock files remain in place so a waiting process and a later
+// process cannot accidentally lock different inodes. The operating system
+// releases the lock if its owner exits unexpectedly.
+func withLocalFileLock(lockPath string, fn func() error) error {
+	return withLocalFileLockTimeout(lockPath, settingsLockTimeout, fn)
+}
+
+func withLocalFileLockTimeout(lockPath string, timeout time.Duration, fn func() error) error {
+	if fn == nil {
+		return errors.New("file lock callback is nil")
+	}
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o700); err != nil {
+		return fmt.Errorf("create lock directory: %w", err)
+	}
+	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return fmt.Errorf("open lock file: %w", err)
+	}
+	if err := lockFile.Chmod(0o600); err != nil {
+		_ = lockFile.Close()
+		return fmt.Errorf("protect lock file: %w", err)
+	}
+
+	deadline := time.Now().Add(timeout)
+	for {
+		locked, lockErr := tryLockSettingsFile(lockFile)
+		if lockErr != nil {
+			_ = lockFile.Close()
+			return fmt.Errorf("lock settings file: %w", lockErr)
+		}
+		if locked {
+			break
+		}
+		if !time.Now().Before(deadline) {
+			_ = lockFile.Close()
+			return fmt.Errorf("timed out waiting for local file lock after %s", timeout)
+		}
+		time.Sleep(settingsLockRetryInterval)
+	}
+
+	var callbackErr, unlockErr, closeErr error
+	func() {
+		defer func() {
+			unlockErr = unlockSettingsFile(lockFile)
+			closeErr = lockFile.Close()
+		}()
+		callbackErr = fn()
+	}()
+	if callbackErr != nil {
+		return callbackErr
+	}
+	if unlockErr != nil {
+		return fmt.Errorf("unlock settings file: %w", unlockErr)
+	}
+	if closeErr != nil {
+		return fmt.Errorf("close settings lock: %w", closeErr)
+	}
+	return nil
+}
+
+// withSettingsFileLock serializes settings read-modify-write operations across
+// local processes. The lock file lives beside the settings file and is kept in
+// place to ensure all processes use the same operating-system lock.
+func withSettingsFileLock(settingsPath string, fn func() error) error {
+	return withLocalFileLock(settingsPath+".lock", fn)
+}
+
+// updateSettings applies one settings mutation while holding the cross-process
+// lock, and starts from the latest persisted value rather than a session's
+// potentially stale startup snapshot.
+func updateSettings(path, dataDir string, mutate func(*appSettings) error) (appSettings, error) {
+	if mutate == nil {
+		return appSettings{}, errors.New("settings mutation is nil")
+	}
+	var updated appSettings
+	err := withSettingsFileLock(path, func() error {
+		current, err := loadSettings(path, dataDir)
+		if err != nil {
+			return err
+		}
+		if err := mutate(&current); err != nil {
+			return err
+		}
+		if err := saveSettings(path, current); err != nil {
+			return err
+		}
+		updated = current
+		return nil
+	})
+	return updated, err
 }
 
 // CollectorPollInterval returns the exact persisted polling duration while

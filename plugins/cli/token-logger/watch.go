@@ -315,13 +315,12 @@ func configuredWatchInterval(dataDir string) time.Duration {
 
 func persistWatchInterval(dataDir string, interval time.Duration) error {
 	path := filepath.Join(dataDir, "settings.json")
-	settings, err := loadSettings(path, dataDir)
-	if err != nil {
-		return err
-	}
-	settings.PollIntervalMillis = interval.Milliseconds()
-	settings.PollIntervalSeconds = int((interval + time.Second - 1) / time.Second)
-	return saveSettings(path, settings)
+	_, err := updateSettings(path, dataDir, func(settings *appSettings) error {
+		settings.PollIntervalMillis = interval.Milliseconds()
+		settings.PollIntervalSeconds = int((interval + time.Second - 1) / time.Second)
+		return nil
+	})
+	return err
 }
 
 func staleWindow(interval time.Duration) time.Duration {

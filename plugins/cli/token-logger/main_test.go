@@ -710,8 +710,8 @@ func TestInteractiveCollectorDoesNotDuplicateBackgroundLease(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("interactive code=%d stderr=%q", code, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "reusing the collector already active") || !strings.Contains(stdout.String(), "mode=background") {
-		t.Fatalf("interactive output did not reuse background status: %q", stdout.String())
+	if !strings.Contains(stdout.String(), "it runs independently of REPL windows") || !strings.Contains(stdout.String(), "mode=background") {
+		t.Fatalf("interactive output did not describe the active background collector: %q", stdout.String())
 	}
 	status, err := store.CollectorRuntimeStatus(time.Minute)
 	if err != nil || status.InstanceID != "background-instance" || status.State != "running" {

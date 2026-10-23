@@ -6,6 +6,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -78,11 +79,64 @@ func interactiveCollectorSummaryForStatus(status tokenlogger.CollectorRuntimeSta
 	return "Collector: " + strings.Join(notes, " · ") + "; /status for details."
 }
 
+func interactiveCollectorSessionDescription(status tokenlogger.CollectorRuntimeStatus, err error, startupDescription string, currentPID int) string {
+	if err != nil {
+		return "collector status unavailable; lifecycle and ownership cannot be confirmed"
+	}
+	if status.Stale || status.State == "stale" {
+		owner := "owner unavailable"
+		if status.Mode == "background" {
+			owner = "detached background collector"
+		} else if status.Mode == "embedded" && status.PID == currentPID {
+			owner = "this REPL's embedded collector"
+		} else if status.Mode == "embedded" && status.PID > 0 {
+			owner = "another process's embedded collector"
+		}
+		return owner + " lease is stale; this REPL will not take ownership automatically"
+	}
+	switch status.State {
+	case "starting", "running", "degraded", "stopping":
+		switch status.Mode {
+		case "background":
+			return "detached background collector; it runs independently of REPL windows"
+		case "embedded":
+			if currentPID > 0 && status.PID == currentPID {
+				return "collector owned by this REPL session; it stops when this session exits"
+			}
+			if status.PID > 0 {
+				return "embedded collector owned by another process; closing this REPL will not stop it"
+			}
+			return "embedded collector active; owner is unavailable; this REPL will not take ownership"
+		default:
+			return "collector active; owner mode is unavailable; this REPL will not take ownership"
+		}
+	case "stopped":
+		if status.Mode == "background" {
+			return "detached background collector stopped; reports use committed data"
+		}
+		if status.Mode == "embedded" && currentPID > 0 && status.PID == currentPID {
+			return "this REPL's embedded collector stopped; it will not restart automatically; reports use committed data"
+		}
+		if status.Mode == "embedded" && status.PID > 0 {
+			return "another process's embedded collector stopped; this REPL will not take ownership automatically; reports use committed data"
+		}
+		return "collector stopped; reports use committed data"
+	case "off":
+		if strings.Contains(startupDescription, "setup failed") {
+			return startupDescription
+		}
+		return "no collector active; reports use committed data"
+	default:
+		return "collector state unavailable; reports use committed data"
+	}
+}
+
 func printInteractiveStatus(output io.Writer, store *tokenlogger.Store, state *interactiveState, dataDir string, settings appSettings, session string) {
+	runtime, runtimeErr := interactiveRuntimeStatus(store)
 	fmt.Fprintf(output, "\nStatus\n  %s\n  data directory: %s\n", versionOutput(), tokenlogger.FormatHumanLabel(dataDir))
-	fmt.Fprintf(output, "\nCollection\n  session: %s\n", session)
+	fmt.Fprintf(output, "\nCollection\n  session: %s\n", interactiveCollectorSessionDescription(runtime, runtimeErr, session, os.Getpid()))
 	fmt.Fprintf(output, "  saved collector enabled preference: %t\n  saved collector auto-start on REPL launch: %t\n  saved collector poll interval: %s\n", settings.CollectorEnabled, settings.AutoStart, settings.collectorPollInterval())
-	if runtime, err := interactiveRuntimeStatus(store); err == nil {
+	if err := runtimeErr; err == nil {
 		fmt.Fprintf(output, "  collector lifecycle: state=%s; mode=%s; stale=%t\n", runtime.State, runtime.Mode, runtime.Stale)
 		fmt.Fprintf(output, "  source scan: last_poll=%s; last_completed=%s; discovered=%d; registered=%d; discovery_failures=%d; pending=%t\n", collectorTimePointer(runtime.LastPollAt), collectorTimePointer(runtime.LastCompletedAt), runtime.DiscoveredSources, runtime.SourceCount, runtime.DiscoveryFailures, runtime.Pending)
 		fmt.Fprintf(output, "  runtime: interval=%s; started=%s; heartbeat=%s; stopped=%s; stop_requested=%s\n", runtime.Interval, collectorTimePointer(runtime.StartedAt), collectorTimePointer(runtime.HeartbeatAt), collectorTimePointer(runtime.StoppedAt), collectorTimePointer(runtime.StopRequestedAt))

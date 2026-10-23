@@ -37,6 +37,36 @@ signals a PID read from storage. A stale heartbeat remains visible and the
 next start may replace it transactionally. Separate data directories have
 independent collectors.
 
+## Multiple REPL windows
+
+You can open more than one REPL against the same local data directory. Each
+process keeps its own terminal input/history, navigation, selected project and
+session, range, and last-report snapshot. The processes share committed usage,
+the saved settings file, registered background sources, and collector runtime
+state. A settings change is persisted for the next launch; an already-open REPL
+continues to use its startup settings snapshot.
+
+Only one managed collector lease is active for a data directory. If a REPL
+finds another healthy collector, it continues browsing without creating a
+second worker or changing the existing worker's roots. A REPL that borrowed an
+embedded collector does not stop it when the borrower closes. The REPL that
+started an embedded collector owns its lifetime, and that collector stops when
+the owning REPL exits. Other REPLs remain open and can query committed data;
+they do not silently take over when the owner exits. `/status` shows the current
+collector lifecycle and whether the active embedded collector belongs to this
+REPL or another process. `/refresh` re-queries committed data and never starts
+collection.
+
+For a collector that should outlive every REPL, register persistent roots and
+start the detached background worker with `watch add` and `watch start`. That
+worker uses the shared registered-source list and continues after REPL windows
+close. Embedded REPL collection instead uses the interactive default roots
+and configured `TOKEN_LOGGER_CODEX_DIR` / `TOKEN_LOGGER_CLAUDE_DIR` roots; those
+environment roots do not register or replace background roots. See
+[configuration](configuration.md) for root selection and collector startup
+policy. Different data directories have independent settings, reports, source
+registries, and collector leases.
+
 ## Backups and recovery
 
 Run `komposyn-lg watch stop` and stop foreground/interactive instances before
