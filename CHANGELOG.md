@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.11.0](https://github.com/ayeshLK/komposyn-lg/compare/v0.10.0...v0.11.0) (2026-10-24)
+
+
+### Features
+
+* support concurrent REPL sessions ([ea4c144](https://github.com/ayeshLK/komposyn-lg/commit/ea4c144494353f659838d865cd56d776ac63ed77))
+
+
+### Bug Fixes
+
+* keep REPL startup responsive during diagnostic review ([25695b7](https://github.com/ayeshLK/komposyn-lg/commit/25695b77ecfd010ef550969ef00ad87e705ffa34))
+
 ## [0.10.0](https://github.com/ayeshLK/komposyn-lg/compare/v0.9.0...v0.10.0) (2026-10-21)
 
 
