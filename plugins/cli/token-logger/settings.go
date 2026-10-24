@@ -142,16 +142,9 @@ func withLocalFileLockTimeout(lockPath string, timeout time.Duration, fn func() 
 	if fn == nil {
 		return errors.New("file lock callback is nil")
 	}
-	if err := os.MkdirAll(filepath.Dir(lockPath), 0o700); err != nil {
-		return fmt.Errorf("create lock directory: %w", err)
-	}
-	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
+	lockFile, err := openLocalLockFile(lockPath)
 	if err != nil {
-		return fmt.Errorf("open lock file: %w", err)
-	}
-	if err := lockFile.Chmod(0o600); err != nil {
-		_ = lockFile.Close()
-		return fmt.Errorf("protect lock file: %w", err)
+		return err
 	}
 
 	deadline := time.Now().Add(timeout)
@@ -171,7 +164,51 @@ func withLocalFileLockTimeout(lockPath string, timeout time.Duration, fn func() 
 		time.Sleep(settingsLockRetryInterval)
 	}
 
-	var callbackErr, unlockErr, closeErr error
+	return runWithLocalLockHeld(lockFile, fn)
+}
+
+// tryWithLocalFileLock runs fn only when the local lock is immediately
+// available. It is intended for optional startup work that must not block an
+// otherwise usable REPL while another process waits for user input.
+func tryWithLocalFileLock(lockPath string, fn func() error) (acquired bool, err error) {
+	if fn == nil {
+		return false, errors.New("file lock callback is nil")
+	}
+	lockFile, err := openLocalLockFile(lockPath)
+	if err != nil {
+		return false, err
+	}
+	acquired, err = tryLockSettingsFile(lockFile)
+	if err != nil {
+		_ = lockFile.Close()
+		return false, fmt.Errorf("lock settings file: %w", err)
+	}
+	if !acquired {
+		if closeErr := lockFile.Close(); closeErr != nil {
+			return false, fmt.Errorf("close settings lock: %w", closeErr)
+		}
+		return false, nil
+	}
+	return true, runWithLocalLockHeld(lockFile, fn)
+}
+
+func openLocalLockFile(lockPath string) (*os.File, error) {
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o700); err != nil {
+		return nil, fmt.Errorf("create lock directory: %w", err)
+	}
+	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("open lock file: %w", err)
+	}
+	if err := lockFile.Chmod(0o600); err != nil {
+		_ = lockFile.Close()
+		return nil, fmt.Errorf("protect lock file: %w", err)
+	}
+	return lockFile, nil
+}
+
+func runWithLocalLockHeld(lockFile *os.File, fn func() error) (callbackErr error) {
+	var unlockErr, closeErr error
 	func() {
 		defer func() {
 			unlockErr = unlockSettingsFile(lockFile)

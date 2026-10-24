@@ -15,8 +15,10 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -315,6 +317,83 @@ func TestConcurrentDiagnosticReviewRereadsRealPendingState(t *testing.T) {
 	}
 	if len(pending) != 0 {
 		t.Fatalf("pending diagnostics after review = %d, want 0", len(pending))
+	}
+}
+
+func TestPendingDiagnosticPromptDoesNotBlockAnotherREPL(t *testing.T) {
+	dataDir := t.TempDir()
+	dbPath := filepath.Join(dataDir, "token-logger.db")
+	firstStore, err := tokenlogger.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer firstStore.Close()
+	secondStore, err := tokenlogger.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer secondStore.Close()
+	diagnostic, err := firstStore.RecordDiagnostic("synthetic review prompt")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	firstReader := &blockingAnswerReader{
+		answers: []string{"n"},
+		entered: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	defer firstReader.releasePrompt()
+	firstDone := make(chan reviewResult, 1)
+	go func() {
+		leave, err := reviewPendingDiagnostics(firstReader, firstStore, dataDir, io.Discard)
+		firstDone <- reviewResult{leave: leave, err: err}
+	}()
+	waitChannel(t, firstReader.entered, "first diagnostic consent prompt")
+
+	var secondOutput bytes.Buffer
+	secondDone := make(chan int, 1)
+	go func() {
+		reader := &scannerLineReader{scanner: bufio.NewScanner(strings.NewReader("/status\n/quit\n")), output: io.Discard}
+		settings := defaultSettings(dataDir)
+		settings.OnboardingComplete = true
+		secondDone <- runInteractiveLoopWithRoots(reader, &secondOutput, io.Discard, secondStore, dataDir, settings, false, nil)
+	}()
+	select {
+	case code := <-secondDone:
+		if code != 0 {
+			t.Fatalf("second REPL exit = %d", code)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("second REPL did not reach and leave its command loop while diagnostic review was waiting")
+	}
+	if !strings.Contains(secondOutput.String(), "Status\n") {
+		t.Fatalf("second REPL did not handle /status: %s", secondOutput.String())
+	}
+	select {
+	case result := <-firstDone:
+		t.Fatalf("first reviewer completed before its prompt was answered: %+v", result)
+	default:
+	}
+	pending, err := secondStore.PendingDiagnostics()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[0].Fingerprint != diagnostic.Fingerprint {
+		t.Fatalf("diagnostic changed before first reviewer answered: %+v", pending)
+	}
+
+	firstReader.releasePrompt()
+	first := receiveReviewResult(t, firstDone, "first diagnostic review after consent")
+	if first.err != nil || first.leave {
+		t.Fatalf("first review result = %+v", first)
+	}
+	stored, err := secondStore.Diagnostic(diagnostic.Fingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Status != "skipped" {
+		t.Fatalf("diagnostic status after explicit answer = %q, want skipped", stored.Status)
 	}
 }
 

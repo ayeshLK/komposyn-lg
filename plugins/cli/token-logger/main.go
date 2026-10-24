@@ -898,7 +898,7 @@ func runInteractiveLoopWithClockAndRoots(reader interactiveLineReader, stdout, s
 
 func reviewPendingDiagnostics(reader interactiveLineReader, store *tokenlogger.Store, dataDir string, output io.Writer) (leave bool, err error) {
 	lockPath := filepath.Join(dataDir, ".diagnostic-review.lock")
-	err = withLocalFileLock(lockPath, func() error {
+	acquired, err := tryWithLocalFileLock(lockPath, func() error {
 		pending, pendingErr := store.PendingDiagnostics()
 		if pendingErr != nil {
 			return pendingErr
@@ -916,6 +916,9 @@ func reviewPendingDiagnostics(reader interactiveLineReader, store *tokenlogger.S
 		}
 		return nil
 	})
+	if err == nil && !acquired {
+		fmt.Fprintln(output, "Another session is reviewing pending diagnostics; continuing without waiting.")
+	}
 	return leave, err
 }
 
