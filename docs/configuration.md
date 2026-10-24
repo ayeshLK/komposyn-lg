@@ -58,6 +58,11 @@ enabled/auto-start choices, data directory, exact millisecond polling interval
 mode. Defaults are a five-second poll interval and non-blocking diagnostic
 handling. Settings writes are atomic.
 
+Concurrent REPL processes using the same data directory read and write this
+shared settings file. Each open REPL keeps the settings snapshot it loaded at
+startup; a change made by another process is used by later launches. Collector
+runtime state is shared through the database's single managed lease.
+
 ## Collector source roots
 
 Persistent background sources belong to the selected data directory:
@@ -73,6 +78,13 @@ enabled state, and local health. Existing targets resolve symlinks for duplicate
 detection. Paths are local administrative metadata shown by `watch list`; they
 are never included in diagnostics or issue drafts. A background collector
 reloads enabled roots before every poll.
+
+These registered roots are for the detached `watch start` collector. They are
+separate from roots used by an embedded REPL collector; configuring a REPL's
+environment roots neither registers them nor changes a running collector's
+roots. When two REPLs share a data directory, only one can own its collector
+lease at a time. A second REPL may browse while the existing collector runs,
+but does not take ownership or change its roots.
 
 The interactive auto-start collector reads, but never modifies, provider-owned
 source files. Set its roots with:

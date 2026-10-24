@@ -77,12 +77,12 @@ func runWithInput(args []string, input io.Reader, stdout, stderr io.Writer) int 
 		if terminalInput, interactiveOutput, interactiveStderr, ok := newTerminalLineReader(input, stdout, stderr); ok {
 			defer terminalInput.Close()
 			if !settings.OnboardingComplete {
-				var onboardingErr error
-				settings, startNow, onboardingErr = runOnboardingWithoutHistory(terminalInput, dataDir, settings)
-				if onboardingErr != nil {
+				var cancelled bool
+				settings, startNow, cancelled, err = coordinateInteractiveOnboarding(terminalInput, settingsPath, dataDir, settings, true)
+				if cancelled {
 					return 0
 				}
-				if err := saveSettings(settingsPath, settings); err != nil {
+				if err != nil {
 					fmt.Fprintf(interactiveStderr, "save settings to %s: %v\n", settingsPath, err)
 					return 2
 				}
@@ -91,12 +91,12 @@ func runWithInput(args []string, input io.Reader, stdout, stderr io.Writer) int 
 		}
 		scanner := bufio.NewScanner(input)
 		if !settings.OnboardingComplete {
-			var onboardingErr error
-			settings, startNow, onboardingErr = runOnboarding(&scannerLineReader{scanner: scanner, output: stdout}, dataDir, settings)
-			if onboardingErr != nil {
+			var cancelled bool
+			settings, startNow, cancelled, err = coordinateInteractiveOnboarding(&scannerLineReader{scanner: scanner, output: stdout}, settingsPath, dataDir, settings, false)
+			if cancelled {
 				return 0
 			}
-			if err := saveSettings(settingsPath, settings); err != nil {
+			if err != nil {
 				fmt.Fprintf(stderr, "save settings to %s: %v\n", settingsPath, err)
 				return 2
 			}
@@ -146,6 +146,40 @@ func runWithInput(args []string, input io.Reader, stdout, stderr io.Writer) int 
 		fmt.Fprintf(stderr, "unknown command %q; run komposyn-lg --help for usage\n", args[0])
 		return 1
 	}
+}
+
+func coordinateInteractiveOnboarding(reader interactiveLineReader, settingsPath, dataDir string, initial appSettings, disableHistory bool) (settings appSettings, startNow, cancelled bool, err error) {
+	settings = initial
+	if settings.OnboardingComplete {
+		return settings, false, false, nil
+	}
+	err = withSettingsFileLock(settingsPath, func() error {
+		latest, loadErr := loadSettings(settingsPath, dataDir)
+		if loadErr != nil {
+			return loadErr
+		}
+		settings = latest
+		if settings.OnboardingComplete {
+			return nil
+		}
+		var updated appSettings
+		var requested bool
+		if disableHistory {
+			updated, requested, loadErr = runOnboardingWithoutHistory(reader, dataDir, settings)
+		} else {
+			updated, requested, loadErr = runOnboarding(reader, dataDir, settings)
+		}
+		if loadErr != nil {
+			cancelled = true
+			return nil
+		}
+		if saveErr := saveSettings(settingsPath, updated); saveErr != nil {
+			return saveErr
+		}
+		settings, startNow = updated, requested
+		return nil
+	})
+	return settings, startNow, cancelled, err
 }
 
 type interactiveState struct {
@@ -547,12 +581,20 @@ func runInteractiveLoop(reader interactiveLineReader, stdout, stderr io.Writer, 
 }
 
 func runInteractiveLoopWithClock(reader interactiveLineReader, stdout, stderr io.Writer, store *tokenlogger.Store, dataDir string, settings appSettings, startNow bool, now func() time.Time) int {
+	return runInteractiveLoopWithClockAndRoots(reader, stdout, stderr, store, dataDir, settings, startNow, now, defaultCollectorRoots())
+}
+
+func runInteractiveLoopWithRoots(reader interactiveLineReader, stdout, stderr io.Writer, store *tokenlogger.Store, dataDir string, settings appSettings, startNow bool, roots []tokenlogger.CollectorRoot) int {
+	return runInteractiveLoopWithClockAndRoots(reader, stdout, stderr, store, dataDir, settings, startNow, time.Now, roots)
+}
+
+func runInteractiveLoopWithClockAndRoots(reader interactiveLineReader, stdout, stderr io.Writer, store *tokenlogger.Store, dataDir string, settings appSettings, startNow bool, now func() time.Time, roots []tokenlogger.CollectorRoot) int {
 	state := interactiveState{groupBy: []string{tokenlogger.GroupClient, tokenlogger.GroupProvider, tokenlogger.GroupModel}}
 	var collectorRuntime *interactiveCollectorRuntime
 	collectorSession := "session-owned collector off: collection preference is disabled"
 	if startNow || (settings.CollectorEnabled && settings.AutoStart) {
 		var err error
-		collectorRuntime, err = startInteractiveCollector(store, defaultCollectorRoots(), settings.collectorPollInterval())
+		collectorRuntime, err = startInteractiveCollector(store, roots, settings.collectorPollInterval())
 		if errors.Is(err, tokenlogger.ErrCollectorActive) {
 			collectorSession = "reusing the collector already active for this data directory"
 		} else if err != nil {
@@ -573,14 +615,12 @@ func runInteractiveLoopWithClock(reader interactiveLineReader, stdout, stderr io
 	if hint := interactiveInputHint(); hint != "" && reader.IsTerminal() {
 		fmt.Fprintln(stdout, hint)
 	}
-	if pending, err := store.PendingDiagnostics(); err == nil && len(pending) > 0 {
-		fmt.Fprintf(stdout, "There are %d pending local diagnostic(s).\n", len(pending))
-		for _, diagnostic := range pending {
-			fmt.Fprintf(stdout, "Pending diagnostic %s (%d occurrence(s)).\n", diagnostic.Fingerprint, diagnostic.OccurrenceCount)
-			if offerDiagnostic(reader, store, diagnostic) != nil {
-				return 0
-			}
-		}
+	leaveAfterDiagnosticPrompt, err := reviewPendingDiagnostics(reader, store, dataDir, stdout)
+	if err != nil {
+		fmt.Fprintln(stdout, "Pending diagnostic review could not be coordinated; items remain local for later review.")
+	}
+	if leaveAfterDiagnosticPrompt {
+		return 0
 	}
 	if interactiveRender(stdout, stderr, store, &state, reader, now) {
 		return 0
@@ -854,6 +894,32 @@ func runInteractiveLoopWithClock(reader interactiveLineReader, stdout, stderr io
 			fmt.Fprintf(stdout, "unknown command %q; use /help\n", command)
 		}
 	}
+}
+
+func reviewPendingDiagnostics(reader interactiveLineReader, store *tokenlogger.Store, dataDir string, output io.Writer) (leave bool, err error) {
+	lockPath := filepath.Join(dataDir, ".diagnostic-review.lock")
+	acquired, err := tryWithLocalFileLock(lockPath, func() error {
+		pending, pendingErr := store.PendingDiagnostics()
+		if pendingErr != nil {
+			return pendingErr
+		}
+		if len(pending) == 0 {
+			return nil
+		}
+		fmt.Fprintf(output, "There are %d pending local diagnostic(s).\n", len(pending))
+		for _, diagnostic := range pending {
+			fmt.Fprintf(output, "Pending diagnostic %s (%d occurrence(s)).\n", diagnostic.Fingerprint, diagnostic.OccurrenceCount)
+			if offerDiagnostic(reader, store, diagnostic) != nil {
+				leave = true
+				return nil
+			}
+		}
+		return nil
+	})
+	if err == nil && !acquired {
+		fmt.Fprintln(output, "Another session is reviewing pending diagnostics; continuing without waiting.")
+	}
+	return leave, err
 }
 
 func (state *interactiveState) resolveRange(now func() time.Time) {
@@ -1370,6 +1436,23 @@ func runSettings(args []string, stdout, stderr io.Writer) int {
 		}
 		index++
 	}
+	var collectorSetting, autoStartSetting *bool
+	if collectorValue != "" {
+		value, ok := settingBool(collectorValue)
+		if !ok {
+			fmt.Fprintln(stderr, "--collector expects on or off")
+			return 1
+		}
+		collectorSetting = &value
+	}
+	if autoStartValue != "" {
+		value, ok := settingBool(autoStartValue)
+		if !ok {
+			fmt.Fprintln(stderr, "--auto-start expects on or off")
+			return 1
+		}
+		autoStartSetting = &value
+	}
 	resolution, err := resolveDataDir(dataDir)
 	if err != nil {
 		fmt.Fprintf(stderr, "resolve token logger data directory: %v\n", err)
@@ -1378,30 +1461,18 @@ func runSettings(args []string, stdout, stderr io.Writer) int {
 	reportDataDirResolution(stderr, resolution)
 	dataDir = resolution.Path
 	path := filepath.Join(dataDir, "settings.json")
-	settings, err := loadSettings(path, dataDir)
+	settings, err := updateSettings(path, dataDir, func(settings *appSettings) error {
+		if collectorSetting != nil {
+			settings.CollectorEnabled = *collectorSetting
+		}
+		if autoStartSetting != nil {
+			settings.AutoStart = *autoStartSetting
+		}
+		settings.OnboardingComplete = true
+		return nil
+	})
 	if err != nil {
-		fmt.Fprintf(stderr, "load settings from %s: %v\n", path, err)
-		return 2
-	}
-	if collectorValue != "" {
-		value, ok := settingBool(collectorValue)
-		if !ok {
-			fmt.Fprintln(stderr, "--collector expects on or off")
-			return 1
-		}
-		settings.CollectorEnabled = value
-	}
-	if autoStartValue != "" {
-		value, ok := settingBool(autoStartValue)
-		if !ok {
-			fmt.Fprintln(stderr, "--auto-start expects on or off")
-			return 1
-		}
-		settings.AutoStart = value
-	}
-	settings.OnboardingComplete = true
-	if err := saveSettings(path, settings); err != nil {
-		fmt.Fprintf(stderr, "save settings: %v\n", err)
+		fmt.Fprintf(stderr, "update settings: %v\n", err)
 		return 2
 	}
 	fmt.Fprintf(stdout, "data_dir=%s collector=%t auto_start=%t interval=%s\n", dataDir, settings.CollectorEnabled, settings.AutoStart, settings.collectorPollInterval())
