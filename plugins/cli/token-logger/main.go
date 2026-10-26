@@ -42,14 +42,35 @@ const maxInteractiveCommandBytes = 64 * 1024
 const maxInteractiveCommandRunes = maxInteractiveCommandBytes / 4 // UTF-8's maximum width.
 
 func main() {
-	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+	code := runProcess(os.Args[1:], os.Stdin, os.Stdout, os.Stderr)
+	os.Exit(code)
+}
+
+func runProcess(args []string, input io.Reader, stdout, stderr io.Writer) int {
+	logger := newProcessLogger(stderr)
+	command := commandForLog(args)
+	logger.Event(appLogProcessStarted, appLogCodeNone, command, 0)
+	code := runWithInputAndLogger(args, input, stdout, stderr, logger)
+	if code != 0 {
+		logger.Event(appLogCommandFailed, appLogCodeNone, command, code)
+	}
+	logger.Event(appLogProcessFinished, appLogCodeNone, command, code)
+	logger.Close()
+	return code
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
-	return runWithInput(args, os.Stdin, stdout, stderr)
+	return runWithInputAndLogger(args, os.Stdin, stdout, stderr, discardApplicationLog{})
 }
 
 func runWithInput(args []string, input io.Reader, stdout, stderr io.Writer) int {
+	return runWithInputAndLogger(args, input, stdout, stderr, discardApplicationLog{})
+}
+
+func runWithInputAndLogger(args []string, input io.Reader, stdout, stderr io.Writer, logger applicationLog) int {
+	if logger == nil {
+		logger = discardApplicationLog{}
+	}
 	if len(args) > 0 && (args[0] == "help" || args[0] == "--help" || args[0] == "-h" || containsHelpFlag(args)) {
 		return runHelp(args, stdout, stderr)
 	}
@@ -87,7 +108,7 @@ func runWithInput(args []string, input io.Reader, stdout, stderr io.Writer) int 
 					return 2
 				}
 			}
-			return runInteractiveLoop(terminalInput, interactiveOutput, interactiveStderr, store, dataDir, settings, startNow)
+			return runInteractiveLoopWithLogger(terminalInput, interactiveOutput, interactiveStderr, store, dataDir, settings, startNow, logger)
 		}
 		scanner := bufio.NewScanner(input)
 		if !settings.OnboardingComplete {
@@ -101,7 +122,7 @@ func runWithInput(args []string, input io.Reader, stdout, stderr io.Writer) int 
 				return 2
 			}
 		}
-		return runInteractiveLoop(&scannerLineReader{scanner: scanner, output: stdout}, stdout, stderr, store, dataDir, settings, startNow)
+		return runInteractiveLoopWithLogger(&scannerLineReader{scanner: scanner, output: stdout}, stdout, stderr, store, dataDir, settings, startNow, logger)
 	}
 	switch args[0] {
 	case "_watch-lifecycle":
@@ -137,7 +158,7 @@ func runWithInput(args []string, input io.Reader, stdout, stderr io.Writer) int 
 	case "usage", "cost":
 		return runReport(args[0], args[1:], stdout, stderr)
 	case "watch":
-		return runWatch(args[1:], stdout, stderr)
+		return runWatchWithLogger(args[1:], stdout, stderr, logger)
 	case "settings":
 		return runSettings(args[1:], stdout, stderr)
 	case "report-issue":
@@ -218,6 +239,10 @@ type interactiveCollectorRuntime struct {
 }
 
 func startInteractiveCollector(store *tokenlogger.Store, roots []tokenlogger.CollectorRoot, interval time.Duration) (*interactiveCollectorRuntime, error) {
+	return startInteractiveCollectorWithLogger(store, roots, interval, discardApplicationLog{})
+}
+
+func startInteractiveCollectorWithLogger(store *tokenlogger.Store, roots []tokenlogger.CollectorRoot, interval time.Duration, logger applicationLog) (*interactiveCollectorRuntime, error) {
 	collector, err := tokenlogger.NewCollectorWithRoots(store, roots, interval)
 	if err != nil {
 		return nil, err
@@ -260,9 +285,17 @@ func startInteractiveCollector(store *tokenlogger.Store, roots []tokenlogger.Col
 				}
 			}
 		}()
-		_ = collector.RunImmediate(ctx, func(result tokenlogger.ImportResult, pollErr error) {
-			_ = store.CompleteCollectorPoll(instance, result, collector.Health(), pollErr)
+		runErr := collector.RunImmediate(ctx, func(result tokenlogger.ImportResult, pollErr error) {
+			if pollErr != nil && !errors.Is(pollErr, context.Canceled) && !errors.Is(pollErr, context.DeadlineExceeded) {
+				logger.Event(appLogCollectorFailed, appLogCodeCollectorPoll, appCommandInteractive, 2)
+			}
+			if err := store.CompleteCollectorPoll(instance, result, collector.Health(), pollErr); err != nil {
+				logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandInteractive, 2)
+			}
 		})
+		if runErr != nil && !errors.Is(runErr, context.Canceled) {
+			logger.Event(appLogCollectorFailed, appLogCodeCollectorPoll, appCommandInteractive, 2)
+		}
 		cancel()
 		<-heartbeatDone
 	}()
@@ -577,31 +610,44 @@ func normalizePaste(input []byte) []byte {
 }
 
 func runInteractiveLoop(reader interactiveLineReader, stdout, stderr io.Writer, store *tokenlogger.Store, dataDir string, settings appSettings, startNow bool) int {
-	return runInteractiveLoopWithClock(reader, stdout, stderr, store, dataDir, settings, startNow, time.Now)
+	return runInteractiveLoopWithLogger(reader, stdout, stderr, store, dataDir, settings, startNow, discardApplicationLog{})
+}
+
+func runInteractiveLoopWithLogger(reader interactiveLineReader, stdout, stderr io.Writer, store *tokenlogger.Store, dataDir string, settings appSettings, startNow bool, logger applicationLog) int {
+	return runInteractiveLoopWithClockAndRootsAndLogger(reader, stdout, stderr, store, dataDir, settings, startNow, time.Now, defaultCollectorRoots(), logger)
 }
 
 func runInteractiveLoopWithClock(reader interactiveLineReader, stdout, stderr io.Writer, store *tokenlogger.Store, dataDir string, settings appSettings, startNow bool, now func() time.Time) int {
-	return runInteractiveLoopWithClockAndRoots(reader, stdout, stderr, store, dataDir, settings, startNow, now, defaultCollectorRoots())
+	return runInteractiveLoopWithClockAndRootsAndLogger(reader, stdout, stderr, store, dataDir, settings, startNow, now, defaultCollectorRoots(), discardApplicationLog{})
 }
 
 func runInteractiveLoopWithRoots(reader interactiveLineReader, stdout, stderr io.Writer, store *tokenlogger.Store, dataDir string, settings appSettings, startNow bool, roots []tokenlogger.CollectorRoot) int {
-	return runInteractiveLoopWithClockAndRoots(reader, stdout, stderr, store, dataDir, settings, startNow, time.Now, roots)
+	return runInteractiveLoopWithClockAndRootsAndLogger(reader, stdout, stderr, store, dataDir, settings, startNow, time.Now, roots, discardApplicationLog{})
 }
 
 func runInteractiveLoopWithClockAndRoots(reader interactiveLineReader, stdout, stderr io.Writer, store *tokenlogger.Store, dataDir string, settings appSettings, startNow bool, now func() time.Time, roots []tokenlogger.CollectorRoot) int {
+	return runInteractiveLoopWithClockAndRootsAndLogger(reader, stdout, stderr, store, dataDir, settings, startNow, now, roots, discardApplicationLog{})
+}
+
+func runInteractiveLoopWithClockAndRootsAndLogger(reader interactiveLineReader, stdout, stderr io.Writer, store *tokenlogger.Store, dataDir string, settings appSettings, startNow bool, now func() time.Time, roots []tokenlogger.CollectorRoot, logger applicationLog) int {
 	state := interactiveState{groupBy: []string{tokenlogger.GroupClient, tokenlogger.GroupProvider, tokenlogger.GroupModel}}
 	var collectorRuntime *interactiveCollectorRuntime
 	collectorSession := "session-owned collector off: collection preference is disabled"
 	if startNow || (settings.CollectorEnabled && settings.AutoStart) {
 		var err error
-		collectorRuntime, err = startInteractiveCollector(store, roots, settings.collectorPollInterval())
+		collectorRuntime, err = startInteractiveCollectorWithLogger(store, roots, settings.collectorPollInterval(), logger)
 		if errors.Is(err, tokenlogger.ErrCollectorActive) {
 			collectorSession = "reusing the collector already active for this data directory"
 		} else if err != nil {
 			collectorSession = "collector setup failed; see the error above"
 			fmt.Fprintf(stderr, "collector setup failed: %v\n", err)
+			logger.Event(appLogCollectorFailed, appLogCodeCollectorAcquire, appCommandInteractive, 2)
 		} else {
-			defer collectorRuntime.stop()
+			logger.Event(appLogCollectorStarted, appLogCodeNone, appCommandInteractive, 0)
+			defer func() {
+				collectorRuntime.stop()
+				logger.Event(appLogCollectorStopped, appLogCodeNone, appCommandInteractive, 0)
+			}()
 			collectorSession = "session-owned collector started from saved auto-start preference"
 			if startNow {
 				collectorSession = "session-owned collector started as requested during onboarding"
