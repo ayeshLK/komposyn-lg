@@ -93,7 +93,10 @@ RFC3339 timestamp with `Z` or an explicit numeric offset; comparisons use UTC.
 default record limit is 50 and the hard limit is 200. The reader scans at most
 20 MiB and 25,000 physical lines per invocation, with a cooperative two-second
 work deadline. Each line is capped at 8 KiB, text fields at 256 bytes, and
-nested JSON values are rejected.
+nested JSON values are rejected. Within each file it scans from newest complete
+line to oldest so an entry budget prioritizes recent matches. Exhausted byte,
+entry, or runtime budgets are reported as truncation; returned record limits
+are reported as truncation only when another matching record was found.
 The JSON response has its own `format_version: 1`, independent of harness
 protocol-v1. It includes availability, byte/entry counts, missing files,
 retention gaps, malformed and unsupported counts, and truncation indicators.
@@ -107,7 +110,9 @@ an incomplete final line, marking the response truncated. Archive removal or
 replacement during a read can result in missing/unreadable indicators.
 
 Text output projects only known event, severity, command, and code values plus
-bounded version/process metadata. Unknown fields and event values are counted
+bounded version/process metadata. The reader recognizes the fixed additive
+event and collector summary fields emitted by CLI operational logging; summary
+counters are numeric and bounded. Unknown fields and event values are counted
 as unsupported and omitted. JSON output is also local diagnostic material: it
 includes exact timestamps and process/run identifiers. It is not an export or
 anonymous report; review it before sharing. This inspection path remains

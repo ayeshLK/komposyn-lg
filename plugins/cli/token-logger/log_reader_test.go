@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -19,6 +20,26 @@ func syntheticLogLine(at, level, event, extra string) string {
 		extra = "," + extra
 	}
 	return fmt.Sprintf(`{"time":%q,"level":%q,"msg":%q,"format_version":1,"cli_version":"v1.2.3","core_version":"v0.9.0","pid":123,"run_id":"0123456789abcdef0123456789abcdef","command":"watch","metadata_truncated":false%s}`+"\n", at, level, event, extra)
+}
+
+func syntheticLogEvent(at, level, event, code string, fields map[string]any) string {
+	entry := map[string]any{
+		"time": at, "level": level, "msg": event, "format_version": 1,
+		"cli_version": "v1.2.3", "core_version": "v0.9.0", "pid": 123,
+		"run_id": "0123456789abcdef0123456789abcdef", "command": "watch",
+		"metadata_truncated": false,
+	}
+	if code != "" {
+		entry["code"] = code
+	}
+	for key, value := range fields {
+		entry[key] = value
+	}
+	data, err := json.Marshal(entry)
+	if err != nil {
+		panic(err)
+	}
+	return string(data) + "\n"
 }
 
 func writeSyntheticLog(t *testing.T, dir, name string, content string) string {
@@ -92,6 +113,92 @@ func TestReadManagedLogsBoundsScanAndResponse(t *testing.T) {
 	}
 	if len(result.Records) != 3 || !result.Truncated || result.BytesScanned > maxLogReadBytes || result.EntriesScanned > maxLogReadEntries {
 		t.Fatalf("reader exceeded bounds or hid truncation: %+v", result)
+	}
+}
+
+func TestReadManagedLogsLimitAtArchiveBoundary(t *testing.T) {
+	t.Run("additional archived match is reported", func(t *testing.T) {
+		dir := t.TempDir()
+		writeSyntheticLog(t, dir, "klg.log", syntheticLogLine("2026-10-20T10:00:00Z", "INFO", "process.started", ""))
+		writeSyntheticLog(t, dir, "klg.log.1", syntheticLogLine("2026-10-20T09:00:00Z", "INFO", "process.finished", ""))
+		result, err := readManagedLogs(dir, logReadOptions{Limit: 1})
+		if err != nil || len(result.Records) != 1 || !result.Truncated {
+			t.Fatalf("archive boundary match was hidden: result=%+v err=%v", result, err)
+		}
+	})
+	t.Run("exact result count is not reported as truncated", func(t *testing.T) {
+		dir := t.TempDir()
+		writeSyntheticLog(t, dir, "klg.log", syntheticLogLine("2026-10-20T10:00:00Z", "INFO", "process.started", ""))
+		result, err := readManagedLogs(dir, logReadOptions{Limit: 1})
+		if err != nil || len(result.Records) != 1 || result.Truncated {
+			t.Fatalf("exact result count was marked truncated: result=%+v err=%v", result, err)
+		}
+	})
+}
+
+func TestReadManagedLogsEntryBudgetFindsNewestArchivedWarning(t *testing.T) {
+	dir := t.TempDir()
+	writeMany := func(name string, count int, tail string) {
+		t.Helper()
+		file, err := os.Create(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		writer := bufio.NewWriter(file)
+		line := syntheticLogLine("2026-10-20T10:00:00Z", "INFO", "process.started", "")
+		for i := 0; i < count; i++ {
+			if _, err := writer.WriteString(line); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if tail != "" {
+			if _, err := writer.WriteString(tail); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := writer.Flush(); err != nil {
+			t.Fatal(err)
+		}
+		if err := file.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeMany("klg.log", 15000, "")
+	writeMany("klg.log.1", 15000, syntheticLogLine("2026-10-20T10:01:00Z", "WARN", "collector.failed", `"code":"collector_poll"`))
+	result, err := readManagedLogs(dir, logReadOptions{MinLevel: "warn", Limit: 10})
+	if err != nil || len(result.Records) != 1 || result.Records[0].Event != "collector.failed" || result.Records[0].File != "klg.log.1" {
+		t.Fatalf("newest warning was missed under entry budget: records=%+v entries=%d err=%v", result.Records, result.EntriesScanned, err)
+	}
+	if result.EntriesScanned > maxLogReadEntries || result.TimedOut {
+		t.Fatalf("entry bounded scan did not complete safely: entries=%d timeout=%t", result.EntriesScanned, result.TimedOut)
+	}
+}
+
+func TestLogReaderAcceptsIssue57CatalogueAndSummaryShape(t *testing.T) {
+	for _, fixture := range []struct{ name, line string }{
+		{"directory", syntheticLogEvent("2026-10-20T10:00:00Z", "INFO", "data_directory.resolved", "environment", nil)},
+		{"settings update", syntheticLogEvent("2026-10-20T10:00:00Z", "INFO", "settings.updated", "settings_update", nil)},
+		{"settings load failure", syntheticLogEvent("2026-10-20T10:00:00Z", "WARN", "settings.load_failed", "settings_load", nil)},
+		{"health", syntheticLogEvent("2026-10-20T10:00:00Z", "INFO", "collector.health_changed", "collector_health_running", nil)},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			if _, status := decodeLogRecord([]byte(strings.TrimSuffix(fixture.line, "\n"))); status != "ok" {
+				t.Fatalf("coordinated catalogue entry status=%q line=%s", status, fixture.line)
+			}
+		})
+	}
+	fields := make(map[string]any, len(logSummaryFields)+1)
+	for _, field := range logSummaryFields {
+		fields[field] = uint64(0)
+	}
+	fields["poll_duration_ms"] = uint64(1234)
+	record, status := decodeLogRecord([]byte(strings.TrimSuffix(syntheticLogEvent("2026-10-20T10:00:00Z", "INFO", "collector.summary", "collector_health_running", fields), "\n")))
+	if status != "ok" || len(record.Summary) != len(logSummaryFields) || record.PollDurationMS == nil || *record.PollDurationMS != 1234 {
+		t.Fatalf("coordinated summary record status=%q record=%+v", status, record)
+	}
+	fields["latest_poll_imported"] = "0"
+	if _, status := decodeLogRecord([]byte(strings.TrimSuffix(syntheticLogEvent("2026-10-20T10:00:00Z", "INFO", "collector.summary", "collector_health_running", fields), "\n"))); status != "invalid" {
+		t.Fatalf("string summary count status=%q, want invalid", status)
 	}
 }
 

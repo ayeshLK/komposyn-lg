@@ -4,7 +4,6 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -42,19 +41,21 @@ type logReadOptions struct {
 }
 
 type logReadRecord struct {
-	Time              string  `json:"time"`
-	Level             string  `json:"level"`
-	Event             string  `json:"event"`
-	CLI               string  `json:"cli_version"`
-	Core              string  `json:"core_version"`
-	PID               int     `json:"pid"`
-	RunID             string  `json:"run_id"`
-	Command           string  `json:"command"`
-	Code              string  `json:"code,omitempty"`
-	ExitCode          *int    `json:"exit_code,omitempty"`
-	Count             *uint64 `json:"count,omitempty"`
-	File              string  `json:"file"`
-	MetadataTruncated bool    `json:"metadata_truncated"`
+	Time              string            `json:"time"`
+	Level             string            `json:"level"`
+	Event             string            `json:"event"`
+	CLI               string            `json:"cli_version"`
+	Core              string            `json:"core_version"`
+	PID               int               `json:"pid"`
+	RunID             string            `json:"run_id"`
+	Command           string            `json:"command"`
+	Code              string            `json:"code,omitempty"`
+	ExitCode          *int              `json:"exit_code,omitempty"`
+	Count             *uint64           `json:"count,omitempty"`
+	PollDurationMS    *uint64           `json:"poll_duration_ms,omitempty"`
+	Summary           map[string]uint64 `json:"summary,omitempty"`
+	File              string            `json:"file"`
+	MetadataTruncated bool              `json:"metadata_truncated"`
 	parsedTime        time.Time
 	fileRank          int
 	lineOrder         uint64
@@ -95,11 +96,43 @@ type rawLogEnvelope struct {
 	MetadataTruncated bool    `json:"metadata_truncated"`
 }
 
+type logWindowResult struct {
+	Records        []logReadRecord
+	BytesScanned   int64
+	EntriesScanned int
+	Partial        bool
+	EntryLimit     bool
+	TimedOut       bool
+	Trimmed        bool
+	ReadFailed     bool
+	Invalid        int
+	Unsupported    int
+}
+
 var knownLogFields = map[string]struct{}{
 	"time": {}, "level": {}, "msg": {}, "format_version": {}, "cli_version": {},
 	"core_version": {}, "pid": {}, "run_id": {}, "command": {}, "code": {},
-	"exit_code": {}, "count": {}, "metadata_truncated": {},
+	"exit_code": {}, "count": {}, "metadata_truncated": {}, "poll_duration_ms": {},
 }
+
+var logSummaryCounters = []string{
+	"imported", "duplicates", "ignored_non_usage", "unchanged_snapshot",
+	"deferred_incomplete_tail", "unsupported_usage", "malformed_record", "failed_source",
+}
+
+var logSummaryFields = func() []string {
+	fields := make([]string, 0, len(logSummaryCounters)*2)
+	for _, prefix := range []string{"latest_poll", "run_cumulative"} {
+		for _, counter := range logSummaryCounters {
+			field := prefix + "_" + counter
+			knownLogFields[field] = struct{}{}
+			fields = append(fields, field)
+		}
+	}
+	return fields
+}()
+
+const maxExactJSONInteger = uint64(1<<53 - 1)
 
 func readManagedLogs(dir string, options logReadOptions) (logReadResult, error) {
 	result := logReadResult{
@@ -186,30 +219,30 @@ func readManagedLogs(dir string, options logReadOptions) (logReadResult, error) 
 		if start > 0 {
 			result.Truncated = true
 		}
-		windowRecords, scanned, entriesScanned, partial, hitEntryLimit, timedOut, ringTrimmed, readFailed, invalid, unsupported := scanLogWindow(file, name, rank, start, readSize, options, entriesRemaining)
+		window := scanLogWindow(file, name, rank, start, readSize, options, entriesRemaining)
 		_ = file.Close()
-		result.BytesScanned += scanned
-		remaining -= scanned
-		result.EntriesScanned += entriesScanned
-		entriesRemaining -= entriesScanned
-		if hitEntryLimit {
+		result.BytesScanned += window.BytesScanned
+		remaining -= window.BytesScanned
+		result.EntriesScanned += window.EntriesScanned
+		entriesRemaining -= window.EntriesScanned
+		if window.EntryLimit {
 			result.Truncated = true
 		}
-		if timedOut {
+		if window.TimedOut {
 			result.TimedOut = true
 			result.Truncated = true
 		}
-		result.InvalidEntries += invalid
-		result.Unsupported += unsupported
-		if readFailed {
+		result.InvalidEntries += window.Invalid
+		result.Unsupported += window.Unsupported
+		if window.ReadFailed {
 			result.UnreadableFiles = append(result.UnreadableFiles, name)
 			result.ReadFailure = true
 		}
-		if partial || scanned < readSize {
+		if window.Partial || window.BytesScanned < readSize {
 			result.Truncated = true
 		}
-		files = append(files, windowRecords)
-		if ringTrimmed {
+		files = append(files, window.Records)
+		if window.Trimmed {
 			result.Truncated = true
 		}
 	}
@@ -222,15 +255,17 @@ func readManagedLogs(dir string, options logReadOptions) (logReadResult, error) 
 	}
 	// The file names encode archive age; physical line order is the only
 	// deterministic order available within one process-shared multiprocess file.
+	limitReached := false
 	for _, records := range files {
 		for _, record := range records {
 			if len(result.Records) == options.Limit {
 				result.Truncated = true
+				limitReached = true
 				break
 			}
 			result.Records = append(result.Records, record)
 		}
-		if len(result.Records) == options.Limit {
+		if limitReached {
 			break
 		}
 	}
@@ -253,68 +288,73 @@ func hasArchiveGap(missing []string) bool {
 	return false
 }
 
-func scanLogWindow(file *os.File, name string, rank int, start, size int64, options logReadOptions, entryLimit int) ([]logReadRecord, int64, int, bool, bool, bool, bool, bool, int, int) {
-	if _, err := file.Seek(start, io.SeekStart); err != nil {
-		return nil, 0, 0, true, false, false, false, true, 0, 0
+func scanLogWindow(file *os.File, name string, rank int, start, size int64, options logReadOptions, entryLimit int) logWindowResult {
+	result := logWindowResult{Records: make([]logReadRecord, 0, maxLogReadLimit)}
+	if time.Now().After(options.Deadline) {
+		result.TimedOut = true
+		result.Partial = true
+		return result
 	}
-	reader := bufio.NewReaderSize(io.LimitReader(file, size), 4096)
-	var scanned int64
-	partialStart := start > 0
-	if partialStart {
-		_, complete, _, consumed, err := readBoundedLogLine(reader)
-		scanned += consumed
-		if err != nil && err != io.EOF {
-			return nil, scanned, 0, true, false, false, false, true, 0, 0
-		}
-		if !complete {
-			return nil, scanned, 0, true, false, false, false, false, 0, 0
-		}
+	if size <= 0 {
+		return result
 	}
-	lineOrder := uint64(0)
-	ring := newLogRecordRing(maxLogReadLimit)
-	invalid, unsupported := 0, 0
-	partialEnd := false
-	readFailed := false
-	entriesScanned := 0
-	hitEntryLimit := false
-	timedOut := false
-	for {
+	data := make([]byte, int(size)) // size is already capped to one managed file.
+	n, err := file.ReadAt(data, start)
+	result.BytesScanned = int64(n)
+	if err != nil && err != io.EOF {
+		result.ReadFailed = true
+	}
+	if int64(n) < size {
+		result.Partial = true
+	}
+	data = data[:n]
+	if start > 0 {
+		result.Partial = true
+	}
+	completeEnd := len(data)
+	if completeEnd > 0 && data[completeEnd-1] != '\n' {
+		result.Partial = true // Do not present an append/rotation torn tail as a record.
+		lastNewline := bytes.LastIndexByte(data, '\n')
+		if lastNewline < 0 {
+			return result
+		}
+		completeEnd = lastNewline + 1
+	}
+	lineEnd := completeEnd
+	for lineEnd > 0 {
 		if time.Now().After(options.Deadline) {
-			timedOut = true
+			result.TimedOut = true
+			result.Partial = true
 			break
 		}
-		if entriesScanned >= entryLimit {
-			hitEntryLimit = true
+		if result.EntriesScanned >= entryLimit {
+			result.EntryLimit = true
+			result.Partial = true
 			break
 		}
-		line, complete, oversized, consumed, err := readBoundedLogLine(reader)
-		scanned += consumed
-		if err == io.EOF && len(line) == 0 && consumed == 0 {
+		previousNewline := bytes.LastIndexByte(data[:lineEnd-1], '\n')
+		lineStart := previousNewline + 1
+		line := data[lineStart:lineEnd] // Includes its trailing LF.
+		lineEnd = lineStart
+		if start > 0 && lineStart == 0 {
+			// The scan window began in the middle of this older line.
+			result.Partial = true
 			break
 		}
-		if err != nil && err != io.EOF {
-			readFailed = true
-			break
-		}
-		if !complete {
-			partialEnd = true
-			break
-		}
-		entriesScanned++
-		lineOrder++
-		if oversized {
-			invalid++
+		result.EntriesScanned++
+		if len(line) > maxLogReadLineBytes {
+			result.Invalid++
 			continue
 		}
 		line = bytes.TrimSuffix(line, []byte{'\n'})
 		line = bytes.TrimSuffix(line, []byte{'\r'})
 		record, status := decodeLogRecord(line)
 		if status == "invalid" {
-			invalid++
+			result.Invalid++
 			continue
 		}
 		if status == "unsupported" {
-			unsupported++
+			result.Unsupported++
 			continue
 		}
 		if !logRecordMatches(record, options) {
@@ -322,82 +362,14 @@ func scanLogWindow(file *os.File, name string, rank int, start, size int64, opti
 		}
 		record.File = name
 		record.fileRank = rank
-		record.lineOrder = lineOrder
-		ring.Push(record)
-	}
-	return ring.NewestFirst(), scanned, entriesScanned, partialStart || partialEnd, hitEntryLimit, timedOut, ring.overflowed, readFailed, invalid, unsupported
-}
-
-func readBoundedLogLine(reader *bufio.Reader) ([]byte, bool, bool, int64, error) {
-	line := make([]byte, 0, 256)
-	var consumed int64
-	oversized := false
-	for {
-		part, err := reader.ReadSlice('\n')
-		consumed += int64(len(part))
-		if !oversized {
-			if len(line)+len(part) > maxLogReadLineBytes {
-				oversized = true
-				line = nil
-			} else {
-				line = append(line, part...)
-			}
-		}
-		if err == nil {
-			return line, true, oversized, consumed, nil
-		}
-		if err == bufio.ErrBufferFull {
-			continue
-		}
-		if err == io.EOF {
-			if consumed == 0 {
-				return nil, false, oversized, 0, io.EOF
-			}
-			return line, false, oversized, consumed, nil
-		}
-		return line, false, oversized, consumed, err
-	}
-}
-
-type logRecordRing struct {
-	items      []*logReadRecord
-	next       int
-	count      int
-	overflowed bool
-}
-
-func newLogRecordRing(size int) *logRecordRing {
-	return &logRecordRing{items: make([]*logReadRecord, size)}
-}
-
-func (ring *logRecordRing) Push(record logReadRecord) {
-	copy := record
-	ring.items[ring.next] = &copy
-	if ring.count == len(ring.items) {
-		ring.overflowed = true
-	}
-	ring.next = (ring.next + 1) % len(ring.items)
-	if ring.count < len(ring.items) {
-		ring.count++
-	}
-}
-
-func (ring *logRecordRing) NewestFirst() []logReadRecord {
-	items := make([]logReadRecord, 0, ring.count)
-	index := ring.next - 1
-	if index < 0 {
-		index = len(ring.items) - 1
-	}
-	for i := 0; i < ring.count; i++ {
-		if record := ring.items[index]; record != nil {
-			items = append(items, *record)
-		}
-		index--
-		if index < 0 {
-			index = len(ring.items) - 1
+		record.lineOrder = uint64(result.EntriesScanned)
+		if len(result.Records) < maxLogReadLimit {
+			result.Records = append(result.Records, record)
+		} else {
+			result.Trimmed = true
 		}
 	}
-	return items
+	return result
 }
 
 func decodeLogRecord(line []byte) (logReadRecord, string) {
@@ -412,6 +384,8 @@ func decodeLogRecord(line []byte) (logReadRecord, string) {
 		return result, "invalid"
 	}
 	seen := make(map[string]bool, 16)
+	summaryRaw := make(map[string]json.RawMessage, len(logSummaryFields))
+	var durationRaw json.RawMessage
 	unknown := false
 	for decoder.More() {
 		token, err = decoder.Token()
@@ -426,6 +400,12 @@ func decodeLogRecord(line []byte) (logReadRecord, string) {
 		var value json.RawMessage
 		if err := decoder.Decode(&value); err != nil {
 			return result, "invalid"
+		}
+		if isLogSummaryField(key) {
+			summaryRaw[key] = append(json.RawMessage(nil), value...)
+		}
+		if key == "poll_duration_ms" {
+			durationRaw = append(json.RawMessage(nil), value...)
 		}
 		var scalar any
 		valueDecoder := json.NewDecoder(bytes.NewReader(value))
@@ -479,10 +459,42 @@ func decodeLogRecord(line []byte) (logReadRecord, string) {
 	if envelope.ExitCode != nil && (*envelope.ExitCode < 0 || *envelope.ExitCode > 255) || envelope.Count != nil && *envelope.Count == 0 {
 		return result, "invalid"
 	}
+	var summary map[string]uint64
+	var duration *uint64
+	if envelope.Message == "collector.summary" {
+		if !isCollectorHealthCodeValue(envelope.Code) || len(summaryRaw) != len(logSummaryFields) {
+			return result, "invalid"
+		}
+		if envelope.Code == "collector_health_running" && envelope.Level != "INFO" || envelope.Code != "collector_health_running" && envelope.Level != "WARN" {
+			return result, "invalid"
+		}
+		summary = make(map[string]uint64, len(logSummaryFields))
+		for _, key := range logSummaryFields {
+			raw, ok := summaryRaw[key]
+			if !ok {
+				return result, "invalid"
+			}
+			value, ok := parseExactLogInteger(raw)
+			if !ok {
+				return result, "invalid"
+			}
+			summary[key] = value
+		}
+		if len(durationRaw) > 0 {
+			value, ok := parseExactLogInteger(durationRaw)
+			if !ok || value > 24*60*60*1000 {
+				return result, "invalid"
+			}
+			duration = &value
+		}
+	} else if len(summaryRaw) > 0 || len(durationRaw) > 0 {
+		return result, "invalid"
+	}
 	result = logReadRecord{
 		Time: parsedTime.UTC().Format(time.RFC3339Nano), Level: envelope.Level, Event: envelope.Message,
 		CLI: envelope.CLI, Core: envelope.Core, PID: envelope.PID, RunID: strings.ToLower(envelope.RunID),
 		Command: envelope.Command, Code: envelope.Code, ExitCode: envelope.ExitCode, Count: envelope.Count,
+		PollDurationMS: duration, Summary: summary,
 		MetadataTruncated: envelope.MetadataTruncated, parsedTime: parsedTime,
 	}
 	return result, "ok"
@@ -496,13 +508,48 @@ func logScalarHasExpectedType(key string, value any) bool {
 	case "format_version", "pid", "exit_code", "count":
 		_, ok := value.(json.Number)
 		return ok
+	case "poll_duration_ms":
+		_, ok := value.(json.Number)
+		return ok
 	case "metadata_truncated":
 		_, ok := value.(bool)
 		return ok
 	default:
+		if isLogSummaryField(key) {
+			_, ok := value.(json.Number)
+			return ok
+		}
 		// New fields are unsupported regardless of their scalar type.
 		return value != nil
 	}
+}
+
+func isLogSummaryField(key string) bool {
+	for _, field := range logSummaryFields {
+		if key == field {
+			return true
+		}
+	}
+	return false
+}
+
+func parseExactLogInteger(raw json.RawMessage) (uint64, bool) {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		return 0, false
+	}
+	number, ok := value.(json.Number)
+	if !ok {
+		return 0, false
+	}
+	integer, err := strconv.ParseUint(number.String(), 10, 64)
+	return integer, err == nil && integer <= maxExactJSONInteger
+}
+
+func isCollectorHealthCodeValue(code string) bool {
+	return code == "collector_health_running" || code == "collector_health_degraded" || code == "collector_health_stale"
 }
 
 func requiredLogFields(fields map[string]bool) bool {
@@ -517,8 +564,15 @@ func requiredLogFields(fields map[string]bool) bool {
 var allowedLogEvents = []string{
 	"process.started", "process.finished", "command.failed", "collector.started", "collector.stopped",
 	"collector.failed", "logging.unavailable", "logging.events_suppressed", "logging.events_dropped",
+	"data_directory.resolved", "collector.health_changed", "collector.summary", "settings.updated", "settings.load_failed",
 }
-var allowedLogCodes = []string{"database_open", "settings_load", "collector_acquire", "collector_heartbeat", "collector_poll", "collector_store", "log_write"}
+var allowedLogCodes = []string{
+	"database_open", "settings_load", "collector_acquire", "collector_heartbeat", "collector_poll", "collector_store", "log_write",
+	"settings_update", "onboarding_save", "data_directory", "report_query", "report_render", "process_launch",
+	"collector_readiness", "collector_release", "collector_stop", "collector_health_running", "collector_health_degraded",
+	"collector_health_stale", "explicit", "environment", "current_default", "legacy_default", "import_discovery",
+	"import_source", "protocol_record",
+}
 var allowedLogCommands = []string{"interactive", "version", "harness", "completion", "import", "projects", "sessions", "usage", "cost", "watch", "settings", "report-issue", "other"}
 
 func logRecordMatches(record logReadRecord, options logReadOptions) bool {
@@ -611,6 +665,18 @@ func writeLogReadResult(output io.Writer, result logReadResult, format string) e
 		if record.Count != nil {
 			if _, err := fmt.Fprintf(output, " count=%d", *record.Count); err != nil {
 				return err
+			}
+		}
+		if record.PollDurationMS != nil {
+			if _, err := fmt.Fprintf(output, " poll_duration_ms=%d", *record.PollDurationMS); err != nil {
+				return err
+			}
+		}
+		for _, key := range logSummaryFields {
+			if value, ok := record.Summary[key]; ok {
+				if _, err := fmt.Fprintf(output, " %s=%d", key, value); err != nil {
+					return err
+				}
 			}
 		}
 		if _, err := fmt.Fprintf(output, " file=%s\n", record.File); err != nil {
