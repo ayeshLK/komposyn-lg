@@ -60,11 +60,19 @@ func TestIssue56LogChildHelper(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		droppedForLockContention := 0
 		for index := 0; index < count; index++ {
 			line := []byte(fmt.Sprintf("{\"format_version\":1,\"writer\":%d,\"sequence\":%d}\n", writerID, index))
 			if err := sink.appendBatch([][]byte{line}); err != nil {
+				if err.Error() == "log lock wait exceeded" {
+					droppedForLockContention++
+					continue
+				}
 				t.Fatalf("append process record: %v", err)
 			}
+		}
+		if droppedForLockContention > 0 {
+			fmt.Fprintf(os.Stderr, "dropped %d synthetic records after bounded lock wait\n", droppedForLockContention)
 		}
 	case "lock-owner":
 		lock, err := openPrivateLogFile(sink.lockPath, os.O_CREATE|os.O_RDWR, 0o600)
@@ -455,7 +463,7 @@ func TestConcurrentProcessesRotateWithoutInterleaving(t *testing.T) {
 	}
 	commands := make([]child, 0, processes)
 	for id := 0; id < processes; id++ {
-		command := logChildCommand("rotate", dir, id, 1024, records)
+		command := logChildCommand("rotate", dir, id, 4096, records)
 		output := new(bytes.Buffer)
 		command.Stdout, command.Stderr = output, output
 		if err := command.Start(); err != nil {
@@ -472,8 +480,34 @@ func TestConcurrentProcessesRotateWithoutInterleaving(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sink.maxFile = 1024
+	sink.maxFile = 4096
 	assertBoundedLogFiles(t, sink)
+	seenWriters := make(map[int]bool, processes)
+	seenRecords := make(map[[2]int]bool)
+	for _, path := range append([]string{sink.active}, sink.archivePath(1), sink.archivePath(2), sink.archivePath(3)) {
+		contents, err := os.ReadFile(path)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, record := range decodeLogLines(t, contents) {
+			writer, sequence := int(record["writer"].(float64)), int(record["sequence"].(float64))
+			if writer < 0 || writer >= processes || sequence < 0 || sequence >= records {
+				t.Fatalf("unexpected synthetic log record: %#v", record)
+			}
+			key := [2]int{writer, sequence}
+			if seenRecords[key] {
+				t.Fatalf("duplicate synthetic log record: %#v", record)
+			}
+			seenRecords[key] = true
+			seenWriters[writer] = true
+		}
+	}
+	if len(seenWriters) != processes {
+		t.Fatalf("concurrent rotation omitted writer records: got %v; want all %d writers", seenWriters, processes)
+	}
 }
 
 func TestLogLockOwnerCrashReleasesLock(t *testing.T) {

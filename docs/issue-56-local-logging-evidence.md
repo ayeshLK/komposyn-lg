@@ -82,3 +82,118 @@ Windows amd64 and macOS arm64 can only be reported as cross-compilation unless
 native CI runners execute their platform tests. No native Windows or macOS
 runtime measurement was performed. These checks do not replace repository CI
 or release verification.
+
+## Queue comparison requested in issue comment 6416610258
+
+The request asked us to evaluate `github.com/ayeshLK/lib-disruptor v0.6.0`
+as an alternative to the bounded buffered channel before deciding whether to
+adopt it. The comparison used CLI implementation commit `1297700` and released
+core tag `v0.9.0`. The candidate tag resolves to
+`2a453be90ec1838857a1fff30d2e82ed29732223`; the module checksum is
+`h1:ShU1UkFxkZ7tECF8ozo9YfipD91M3XR0DkilK4QbtBU=`. Its `go.mod` declares Go
+1.25. The optional Linux-only harness is
+[`app_log_queue_compare_test.go`](../plugins/cli/token-logger/app_log_queue_compare_test.go),
+SHA-256 `b7f374a8a2193c3526a9f3cbdcf722c66192d83967898723a1b663668f57271d`.
+It is excluded from ordinary builds and uses no production dependency change.
+
+Reproduce from the repository root with a temporary modfile (the commands do
+not edit the committed `go.mod` or `go.sum`):
+
+```sh
+cp go.mod /tmp/issue56-queuecompare.mod
+cp go.sum /tmp/issue56-queuecompare.sum
+go mod edit -modfile=/tmp/issue56-queuecompare.mod \
+  -require=github.com/ayeshLK/lib-disruptor@v0.6.0
+go test -mod=mod -modfile=/tmp/issue56-queuecompare.mod \
+  -tags=queuecompare ./plugins/cli/token-logger \
+  -run '^TestIssue56Queue(IdleMetrics|RecoveryAfterPressure|PacedFileSinkAndRetainedPayload|FailedWriterAcknowledgesAndRecovers|ShutdownBudgetAndJoin|RingReuseClearsPayloadTail)$' \
+  -count=3 -v
+go test -mod=mod -modfile=/tmp/issue56-queuecompare.mod \
+  -tags=queuecompare ./plugins/cli/token-logger -run '^$' \
+  -bench '^BenchmarkIssue56(Queue|FileSink|ErrorBurst)$' \
+  -benchtime=50000x -benchmem -count=3 -cpu=1,8
+```
+
+Go resolved v0.6.0 from the published module with checksum above; the CLI
+module remained pinned to core v0.9.0 and gained no permanent dependency.
+Both adapters use a 256-entry waiting bound, pre-encoded valid JSON payloads
+capped at 8 KiB, batches of at most 64, nonblocking publication, and the same
+`jsonlLogSink.appendBatch` implementation for file-sink cases. The channel
+consumer removes up to 64 entries into its batch before writing, so those slots
+become available while the batch is in flight. The ring keeps those entries
+inside its 256 gated slots until the batch is acknowledged. This is the existing
+channel behavior versus the candidate ring ownership model, and it affects burst
+capacity; it is not hidden in the results. The channel transfers ownership of
+the event byte slice. The candidate uses
+`MultiProducer`, `TryPublish`, one `BlockingWait` processor, a gate registered
+before publication, and lazily allocated slot-owned buffers capped at 8 KiB.
+It clears the full reused slot before copying the next event. Its handler copies
+the event bytes into the sink batch before acknowledging the ring sequence;
+write failures are counted and acknowledged, never replayed.
+Publication and shutdown are synchronized, and processor termination closes
+admission. These are queue-adapter measurements, not measurements of the full
+`slog` encoder path.
+
+The host was the same shared Linux x86_64 system described above: Go 1.26.9,
+Intel i7-10510U, 16 GiB RAM, ext4, `powersave` governor, load averages near
+1.4. Runs were serialized. Results are ranges across three runs unless stated
+otherwise; these intentionally forced bursts are capacity/latency stress tests
+and dropped counts are part of the result. Benchmark ns/op is producer enqueue
+time while the consumer runs; sink drain and shutdown are outside the timed
+region. Sink write counts are collected after the queue drains.
+
+| Workload | Buffered channel | MultiProducer ring | Reading |
+|---|---|---|---|
+| Queue-only, 256-byte payload, 50,000 concurrent attempts, 1 CPU | 28.81–36.16 ns/op; 0 B/op; 0 allocs/op | 43.45–46.22 ns/op; about 1 B/op; 0 allocs/op | Channel was faster; both dropped 49,744 attempts because the producer burst outran the consumer. |
+| Queue-only, 256-byte payload, 8 CPUs | 68.95–73.46 ns/op; 0 B/op | 87.38–95.98 ns/op; 0 allocs/op | Channel was faster; drop totals varied with scheduler timing. |
+| Queue-only, 8 KiB payload, 1 CPU | 28.59–29.91 ns/op; 0 B/op | 47.34–73.13 ns/op; about 42 B/op | Channel was faster; the ring lazily allocates bounded slot storage as events arrive. |
+| Queue-only, 8 KiB payload, 8 CPUs | 70.28–73.53 ns/op; 0 B/op | 98.43–143.7 ns/op; 42–52 B/op | Ring had wider, slower results; the channel remained faster in all three runs. |
+| Actual JSONL sink, burst, producer enqueue, 8 CPUs | 86.18–94.74 ns/op; 259–416 written | 72.71–75.39 ns/op; 1,804–2,166 written | Ring admitted more and was faster in this oversubscribed run; both still dropped over 95% of 50,000 attempts. |
+| Slow consumer (20 µs per batch), burst, 8 CPUs | 84.01–89.70 ns/op; 259–331 consumed | 81.57–86.24 ns/op; 345–665 consumed | Ring admitted more with overlapping enqueue times, but still dropped over 98.6%. |
+
+The paced file-sink test sent 1,024 valid 8 KiB records at 100 µs intervals.
+All events were accepted and written by both adapters. It crossed the 256-slot
+ring four times, rotated the actual log, and parsed all 1,024 records from the
+active file and archives. Across three runs:
+
+| Metric | Buffered channel | MultiProducer ring |
+|---|---:|---:|
+| Enqueue p50 | 1.01–1.18 µs | 2.80–2.98 µs |
+| Enqueue p95 | 3.15–3.58 µs | 11.06–11.35 µs |
+| Enqueue p99 | 4.64–12.99 µs | 29.16–31.56 µs |
+| Heap change after drain and GC | approximately -4.4–22.8 KiB (measurement noise around baseline) | 2.095–2.096 MiB retained |
+
+After idle startup, each adapter used one worker goroutine. Process CPU usage
+was below `/proc`'s 10 ms tick resolution during each one-second idle sample.
+The channel's idle heap delta was 5.8–12.1 KiB; the ring's was 13.7–13.9 KiB.
+Idle shutdown took 13–23 µs for the channel and 24–364 µs for the ring. A
+five-run pressure/recovery test accepted 320–448 of 5,000 immediate events
+with the channel and 256 with the ring; both drained and accepted all 100 later
+paced events. A three-run synthetic writer-failure test made the first five
+sink batches fail, then succeeded: both continued, counting five failed events
+and writing the remaining 195. A blocked-sink shutdown test returned at a 20 ms budget for both adapters; after
+releasing the synthetic sink, each worker exited. This confirms the wait budget
+does not interrupt the writer call. The optional tests and
+concurrent-publication benchmark also passed under `-race`.
+
+### Decision
+
+Keep the buffered channel in production. It is already behind the CLI-owned
+`applicationLog` interface, needs one worker, and provides the required bounded
+nonblocking behavior. At the realistic paced rate it had lower enqueue latency,
+near-zero retained payload memory after draining, and no drops. The ring was
+slower in queue-only and paced tests, retained up to 256 × 8 KiB of slot
+buffers after a large-record burst, and added processor supervision, explicit
+acknowledgement, admission shutdown, and drain coordination. It admitted more events and had lower producer enqueue time in the artificial
+high-concurrency slow-writer and actual-sink bursts, but still dropped most of
+the 50,000-event burst; the production logger also suppresses repeated
+lifecycle errors. That stress-only capacity difference does not justify the
+extra runtime dependency and lifecycle machinery for this CLI event volume.
+
+The app logger serializes its event encoding and suppression path under a mutex,
+so the concurrent-producer bursts exceed its expected production topology. The
+comparison does not establish behavior on native macOS or Windows, does not
+replace the native multiprocess file tests, and does not claim the channel is
+faster for every workload. If event volume or producer topology changes,
+repeat this comparison with representative traffic before reconsidering the
+queue.
