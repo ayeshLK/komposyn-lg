@@ -178,7 +178,17 @@ func TestHarnessDatabaseOpenFailurePreservesProtocolOutputAndLogsSafely(t *testi
 	if err := os.MkdirAll(filepath.Join(dataDir, "token-logger.db"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	input := strings.NewReader(`{"protocol":"komposyn.token-logger","version":1,"id":"init","method":"initialize","params":{"data_dir":"` + dataDir + `"}}` + "\n")
+	params, err := json.Marshal(initializeParams{DataDir: dataDir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := json.Marshal(protocolRequest{
+		Protocol: "komposyn.token-logger", Version: protocolVersion, ID: "init", Method: "initialize", Params: params,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := strings.NewReader(string(request) + "\n")
 	logDir := t.TempDir()
 	logger, err := newEventLogger(logDir, "v0.11.0", tokenlogger.CoreVersion(), os.Getpid(), "")
 	if err != nil {
