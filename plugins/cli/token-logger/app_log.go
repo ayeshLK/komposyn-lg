@@ -62,6 +62,11 @@ const (
 	appLogSinkUnavailable
 	appLogEventsSuppressed
 	appLogEventsDropped
+	appLogDataDirectoryResolved
+	appLogCollectorHealthChanged
+	appLogCollectorSummary
+	appLogSettingsUpdated
+	appLogSettingsLoadFailed
 )
 
 func (event appLogEvent) String() string {
@@ -84,6 +89,16 @@ func (event appLogEvent) String() string {
 		return "logging.events_suppressed"
 	case appLogEventsDropped:
 		return "logging.events_dropped"
+	case appLogDataDirectoryResolved:
+		return "data_directory.resolved"
+	case appLogCollectorHealthChanged:
+		return "collector.health_changed"
+	case appLogCollectorSummary:
+		return "collector.summary"
+	case appLogSettingsUpdated:
+		return "settings.updated"
+	case appLogSettingsLoadFailed:
+		return "settings.load_failed"
 	default:
 		return ""
 	}
@@ -100,6 +115,25 @@ const (
 	appLogCodeCollectorPoll
 	appLogCodeCollectorStore
 	appLogCodeLogWrite
+	appLogCodeDataDirectory
+	appLogCodeSettingsUpdate
+	appLogCodeOnboardingSave
+	appLogCodeReportQuery
+	appLogCodeReportRender
+	appLogCodeProcessLaunch
+	appLogCodeCollectorReadiness
+	appLogCodeCollectorRelease
+	appLogCodeCollectorStop
+	appLogCodeCollectorHealthRunning
+	appLogCodeCollectorHealthDegraded
+	appLogCodeCollectorHealthStale
+	appLogCodeDataDirectoryExplicit
+	appLogCodeDataDirectoryEnvironment
+	appLogCodeDataDirectoryCurrent
+	appLogCodeDataDirectoryLegacy
+	appLogCodeImportDiscovery
+	appLogCodeImportSource
+	appLogCodeProtocolRecord
 )
 
 func (code appLogCode) String() string {
@@ -118,6 +152,44 @@ func (code appLogCode) String() string {
 		return "collector_store"
 	case appLogCodeLogWrite:
 		return "log_write"
+	case appLogCodeDataDirectory:
+		return "data_directory"
+	case appLogCodeSettingsUpdate:
+		return "settings_update"
+	case appLogCodeOnboardingSave:
+		return "onboarding_save"
+	case appLogCodeReportQuery:
+		return "report_query"
+	case appLogCodeReportRender:
+		return "report_render"
+	case appLogCodeProcessLaunch:
+		return "process_launch"
+	case appLogCodeCollectorReadiness:
+		return "collector_readiness"
+	case appLogCodeCollectorRelease:
+		return "collector_release"
+	case appLogCodeCollectorStop:
+		return "collector_stop"
+	case appLogCodeCollectorHealthRunning:
+		return "collector_health_running"
+	case appLogCodeCollectorHealthDegraded:
+		return "collector_health_degraded"
+	case appLogCodeCollectorHealthStale:
+		return "collector_health_stale"
+	case appLogCodeDataDirectoryExplicit:
+		return "explicit"
+	case appLogCodeDataDirectoryEnvironment:
+		return "environment"
+	case appLogCodeDataDirectoryCurrent:
+		return "current_default"
+	case appLogCodeDataDirectoryLegacy:
+		return "legacy_default"
+	case appLogCodeImportDiscovery:
+		return "import_discovery"
+	case appLogCodeImportSource:
+		return "import_source"
+	case appLogCodeProtocolRecord:
+		return "protocol_record"
 	default:
 		return ""
 	}
@@ -211,6 +283,7 @@ func (command appCommand) String() string {
 // errors, source records, and arbitrary attributes have no API here.
 type applicationLog interface {
 	Event(appLogEvent, appLogCode, appCommand, int)
+	CollectorSummary(appCommand, appLogCode, int64, appLogOutcomeCounts, appLogOutcomeCounts)
 	Unavailable() bool
 	Close()
 }
@@ -218,19 +291,30 @@ type applicationLog interface {
 type discardApplicationLog struct{}
 
 func (discardApplicationLog) Event(appLogEvent, appLogCode, appCommand, int) {}
-func (discardApplicationLog) Close()                                         {}
-func (discardApplicationLog) Unavailable() bool                              { return false }
+func (discardApplicationLog) CollectorSummary(appCommand, appLogCode, int64, appLogOutcomeCounts, appLogOutcomeCounts) {
+}
+func (discardApplicationLog) Close()            {}
+func (discardApplicationLog) Unavailable() bool { return false }
 
 type unavailableApplicationLog struct{}
 
 func (unavailableApplicationLog) Event(appLogEvent, appLogCode, appCommand, int) {}
-func (unavailableApplicationLog) Close()                                         {}
-func (unavailableApplicationLog) Unavailable() bool                              { return true }
+func (unavailableApplicationLog) CollectorSummary(appCommand, appLogCode, int64, appLogOutcomeCounts, appLogOutcomeCounts) {
+}
+func (unavailableApplicationLog) Close()            {}
+func (unavailableApplicationLog) Unavailable() bool { return true }
 
 type logKey struct {
 	event   appLogEvent
 	code    appLogCode
 	command appCommand
+}
+
+// appLogOutcomeCounts is a closed set of counters. It intentionally cannot
+// carry provider identifiers, arbitrary core values, paths, or strings.
+type appLogOutcomeCounts struct {
+	Imported, Duplicates, IgnoredNonUsage, UnchangedSnapshot                int64
+	DeferredIncompleteTail, UnsupportedUsage, MalformedRecord, FailedSource int64
 }
 
 var overflowLogKey = logKey{event: appLogEventsSuppressed, command: appCommandOther}
@@ -363,12 +447,70 @@ func (logger *eventLogger) Event(event appLogEvent, code appLogCode, command app
 	}
 }
 
+const maxLoggedOutcomeCount int64 = 1<<53 - 1
+const maxLoggedDurationMillis int64 = 24 * 60 * 60 * 1000
+
+func boundedLogCount(value int64) int64 {
+	if value < 0 {
+		return 0
+	}
+	if value > maxLoggedOutcomeCount {
+		return maxLoggedOutcomeCount
+	}
+	return value
+}
+
+func boundedLogDuration(value int64) int64 {
+	if value < 0 {
+		return 0
+	}
+	if value > maxLoggedDurationMillis {
+		return maxLoggedDurationMillis
+	}
+	return value
+}
+
+func (logger *eventLogger) CollectorSummary(command appCommand, status appLogCode, durationMillis int64, latest, cumulative appLogOutcomeCounts) {
+	if logger == nil || command.String() == "" || status.String() == "" || !isCollectorHealthCode(status) {
+		return
+	}
+	key := logKey{event: appLogCollectorSummary, code: status, command: command}
+	now := time.Now().UTC()
+	logger.mu.Lock()
+	defer logger.mu.Unlock()
+	if logger.closed {
+		return
+	}
+	if _, ok := logger.last[key]; !ok && len(logger.last) >= maxLogKeyState-1 {
+		key = overflowLogKey
+	}
+	if last, ok := logger.last[key]; ok && !last.IsZero() && now.Sub(last) < logRepeatWindow {
+		logger.suppressed[key]++
+		return
+	}
+	logger.last[key] = now
+	line := logger.encodeCollectorSummary(command, status, durationMillis, latest, cumulative)
+	if len(line) == 0 || len(line) > maxLogEventBytes || line[len(line)-1] != '\n' {
+		logger.dropped.Add(1)
+		return
+	}
+	select {
+	case logger.queue <- line:
+	default:
+		logger.dropped.Add(1)
+	}
+}
+
+func isCollectorHealthCode(code appLogCode) bool {
+	return code == appLogCodeCollectorHealthRunning || code == appLogCodeCollectorHealthDegraded || code == appLogCodeCollectorHealthStale
+}
+
 func (logger *eventLogger) encode(event appLogEvent, code appLogCode, command appCommand, exitCode int, count uint64) []byte {
 	logger.encodeMu.Lock()
 	defer logger.encodeMu.Unlock()
 	logger.encodeBuffer.Reset()
 	level := slog.LevelInfo
-	if event == appLogCollectorFailed || event == appLogSinkUnavailable || event == appLogCommandFailed || event == appLogProcessFinished && exitCode != 0 {
+	if event == appLogCollectorFailed || event == appLogSinkUnavailable || event == appLogCommandFailed || event == appLogSettingsLoadFailed || event == appLogProcessFinished && exitCode != 0 || event == appLogCollectorHealthChanged && code != appLogCodeCollectorHealthRunning || event == appLogCollectorSummary && code != appLogCodeCollectorHealthRunning {
 		level = slog.LevelWarn
 	}
 	attrs := []slog.Attr{
@@ -390,6 +532,48 @@ func (logger *eventLogger) encode(event appLogEvent, code appLogCode, command ap
 		attrs = append(attrs, slog.Uint64("count", count))
 	}
 	logger.encoder.LogAttrs(context.Background(), level, event.String(), attrs...)
+	if logger.encodeBuffer.Len() > maxLogEventBytes {
+		return nil
+	}
+	return append([]byte(nil), logger.encodeBuffer.Bytes()...)
+}
+
+func (logger *eventLogger) encodeCollectorSummary(command appCommand, status appLogCode, durationMillis int64, latest, cumulative appLogOutcomeCounts) []byte {
+	logger.encodeMu.Lock()
+	defer logger.encodeMu.Unlock()
+	logger.encodeBuffer.Reset()
+	attrs := []slog.Attr{
+		slog.Int("format_version", logFormatVersion),
+		slog.String("cli_version", logger.cliVersion),
+		slog.String("core_version", logger.coreVersion),
+		slog.Int("pid", logger.pid),
+		slog.String("run_id", logger.runID),
+		slog.String("command", command.String()),
+		slog.String("code", status.String()),
+		slog.Bool("metadata_truncated", logger.metadataTruncated),
+	}
+	if durationMillis >= 0 {
+		attrs = append(attrs, slog.Int("poll_duration_ms", int(boundedLogDuration(durationMillis))))
+	}
+	appendCounts := func(prefix string, values appLogOutcomeCounts) {
+		attrs = append(attrs,
+			slog.Int64(prefix+"_imported", boundedLogCount(values.Imported)),
+			slog.Int64(prefix+"_duplicates", boundedLogCount(values.Duplicates)),
+			slog.Int64(prefix+"_ignored_non_usage", boundedLogCount(values.IgnoredNonUsage)),
+			slog.Int64(prefix+"_unchanged_snapshot", boundedLogCount(values.UnchangedSnapshot)),
+			slog.Int64(prefix+"_deferred_incomplete_tail", boundedLogCount(values.DeferredIncompleteTail)),
+			slog.Int64(prefix+"_unsupported_usage", boundedLogCount(values.UnsupportedUsage)),
+			slog.Int64(prefix+"_malformed_record", boundedLogCount(values.MalformedRecord)),
+			slog.Int64(prefix+"_failed_source", boundedLogCount(values.FailedSource)),
+		)
+	}
+	appendCounts("latest_poll", latest)
+	appendCounts("run_cumulative", cumulative)
+	level := slog.LevelInfo
+	if status != appLogCodeCollectorHealthRunning {
+		level = slog.LevelWarn
+	}
+	logger.encoder.LogAttrs(context.Background(), level, appLogCollectorSummary.String(), attrs...)
 	if logger.encodeBuffer.Len() > maxLogEventBytes {
 		return nil
 	}

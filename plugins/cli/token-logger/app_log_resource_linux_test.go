@@ -155,29 +155,31 @@ func issue56ReplaceEnv(environment []string, replacements map[string]string) []s
 }
 
 type issue56ResourceResult struct {
-	Scenario       string        `json:"scenario"`
-	Logging        bool          `json:"logging"`
-	Repetition     int           `json:"repetition"`
-	Warmup         time.Duration `json:"warmup_ns"`
-	Measurement    time.Duration `json:"measurement_ns"`
-	Shutdown       time.Duration `json:"shutdown_ns"`
-	LoggerShutdown time.Duration `json:"logger_shutdown_ns"`
-	CPUSeconds     float64       `json:"cpu_seconds"`
-	RSSStartBytes  uint64        `json:"rss_start_bytes"`
-	RSSEndBytes    uint64        `json:"rss_end_bytes"`
-	RSSPeakSampled uint64        `json:"rss_peak_sampled_bytes"`
-	HWMStartBytes  uint64        `json:"hwm_start_bytes"`
-	HWMEndBytes    uint64        `json:"hwm_end_bytes"`
-	IOReadDelta    uint64        `json:"io_read_bytes_delta"`
-	IOWriteDelta   uint64        `json:"io_write_bytes_delta"`
-	AllocDelta     uint64        `json:"go_alloc_bytes_delta"`
-	HeapEnd        uint64        `json:"go_heap_alloc_bytes_end"`
-	LogBytes       int64         `json:"retained_log_bytes"`
-	Suppressed     uint64        `json:"suppressed_count"`
-	Dropped        uint64        `json:"dropped_count"`
-	Unchanged      int           `json:"unchanged_source_observations"`
-	Imported       int64         `json:"imported_records"`
-	ExitCode       int           `json:"collector_exit_code"`
+	Scenario        string        `json:"scenario"`
+	Logging         bool          `json:"logging"`
+	Repetition      int           `json:"repetition"`
+	Warmup          time.Duration `json:"warmup_ns"`
+	Measurement     time.Duration `json:"measurement_ns"`
+	Shutdown        time.Duration `json:"shutdown_ns"`
+	LoggerShutdown  time.Duration `json:"logger_shutdown_ns"`
+	CPUSeconds      float64       `json:"cpu_seconds"`
+	RSSStartBytes   uint64        `json:"rss_start_bytes"`
+	RSSEndBytes     uint64        `json:"rss_end_bytes"`
+	RSSPeakSampled  uint64        `json:"rss_peak_sampled_bytes"`
+	HWMStartBytes   uint64        `json:"hwm_start_bytes"`
+	HWMEndBytes     uint64        `json:"hwm_end_bytes"`
+	IOReadDelta     uint64        `json:"io_read_bytes_delta"`
+	IOWriteDelta    uint64        `json:"io_write_bytes_delta"`
+	AllocDelta      uint64        `json:"go_alloc_bytes_delta"`
+	HeapEnd         uint64        `json:"go_heap_alloc_bytes_end"`
+	LogBytes        int64         `json:"retained_log_bytes"`
+	Suppressed      uint64        `json:"suppressed_count"`
+	Dropped         uint64        `json:"dropped_count"`
+	LogEventCount   int           `json:"log_event_count"`
+	FailureObserved bool          `json:"failure_observed"`
+	Unchanged       int           `json:"unchanged_source_observations"`
+	Imported        int64         `json:"imported_records"`
+	ExitCode        int           `json:"collector_exit_code"`
 }
 
 func runIssue56ResourceSample(t *testing.T, root, scenario string, sources []string, logging bool, warmup, measured time.Duration) issue56ResourceResult {
@@ -284,6 +286,7 @@ func runIssue56ResourceSample(t *testing.T, root, scenario string, sources []str
 	result.AllocDelta, result.HeapEnd = after.TotalAlloc-before.TotalAlloc, after.HeapAlloc
 	finalStatus, _ := store.CollectorRuntimeStatus(time.Second)
 	result.Unchanged, result.Imported = finalStatus.Outcomes.UnchangedSnapshot-unchangedBefore, finalStatus.Imported
+	result.FailureObserved = finalStatus.State == "degraded" || finalStatus.State == "failed" || finalStatus.DiscoveryFailures > 0 || finalStatus.Outcomes.FailedSource > 0
 	shutdownStart := time.Now()
 	cancel()
 	select {
@@ -309,14 +312,22 @@ func runIssue56ResourceSample(t *testing.T, root, scenario string, sources []str
 		for _, path := range paths {
 			if info, err := os.Stat(path); err == nil {
 				result.LogBytes += info.Size()
+				contents, readErr := os.ReadFile(path)
+				if readErr != nil {
+					t.Fatal(readErr)
+				}
+				result.LogEventCount += strings.Count(string(contents), "\n")
 			}
 		}
 	}
 	if result.ExitCode != 0 {
 		t.Fatalf("collector exit code=%d", result.ExitCode)
 	}
-	if scenario == "repeated-failure" && logging && result.Suppressed == 0 {
-		t.Fatalf("failure workload did not produce suppression summaries: %+v", result)
+	if scenario == "repeated-failure" && !result.FailureObserved {
+		t.Fatalf("failure workload did not expose a failed source/discovery state: %+v", result)
+	}
+	if scenario == "repeated-failure" && logging && (result.LogBytes == 0 || result.LogEventCount > 64 || result.Dropped != 0) {
+		t.Fatalf("failure workload did not keep logged evidence bounded and complete: %+v", result)
 	}
 	if scenario == "ordinary" && (result.Imported != int64(len(sources)*2) || result.Unchanged == 0 || result.Suppressed != 0) {
 		t.Fatalf("ordinary workload did not remain a clean imported/unchanged collection: %+v", result)

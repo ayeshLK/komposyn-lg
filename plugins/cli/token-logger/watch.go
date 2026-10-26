@@ -57,17 +57,17 @@ func runWatchWithContextAndLogger(args []string, stdout, stderr io.Writer, ctx c
 	}
 	switch args[0] {
 	case "add":
-		return runWatchAdd(args[1:], stdout, stderr)
+		return runWatchAddWithLogger(args[1:], stdout, stderr, logger)
 	case "remove":
-		return runWatchRemove(args[1:], stdout, stderr)
+		return runWatchRemoveWithLogger(args[1:], stdout, stderr, logger)
 	case "list":
-		return runWatchList(args[1:], stdout, stderr)
+		return runWatchListWithLogger(args[1:], stdout, stderr, logger)
 	case "start":
-		return runWatchStart(args[1:], stdout, stderr)
+		return runWatchStartWithLogger(args[1:], stdout, stderr, logger)
 	case "status":
-		return runWatchStatus(args[1:], stdout, stderr)
+		return runWatchStatusWithLogger(args[1:], stdout, stderr, logger)
 	case "stop":
-		return runWatchStop(args[1:], stdout, stderr)
+		return runWatchStopWithLogger(args[1:], stdout, stderr, logger)
 	case "foreground":
 		return runForegroundWatchWithLogger(args[1:], stdout, stderr, ctx, true, logger)
 	case "serve":
@@ -163,12 +163,16 @@ func validateWatchOptions(options watchOptions, allowed ...string) error {
 }
 
 func openWatchStore(dataDir string, stderr io.Writer) (*tokenlogger.Store, string, error) {
-	resolution, err := resolveDataDir(dataDir)
+	return openWatchStoreWithLogger(dataDir, stderr, discardApplicationLog{}, appCommandWatch)
+}
+
+func openWatchStoreWithLogger(dataDir string, stderr io.Writer, logger applicationLog, command appCommand) (*tokenlogger.Store, string, error) {
+	resolution, err := resolveDataDirWithLog(dataDir, logger, command)
 	if err != nil {
 		return nil, "", fmt.Errorf("resolve token logger data directory: %w", err)
 	}
 	reportDataDirResolution(stderr, resolution)
-	store, err := tokenlogger.Open(filepath.Join(resolution.Path, "token-logger.db"))
+	store, err := openStoreWithLog(filepath.Join(resolution.Path, "token-logger.db"), logger, command)
 	if err != nil {
 		return nil, "", fmt.Errorf("open token logger database in %s: %w", resolution.Path, err)
 	}
@@ -176,6 +180,10 @@ func openWatchStore(dataDir string, stderr io.Writer) (*tokenlogger.Store, strin
 }
 
 func runWatchAdd(args []string, stdout, stderr io.Writer) int {
+	return runWatchAddWithLogger(args, stdout, stderr, discardApplicationLog{})
+}
+
+func runWatchAddWithLogger(args []string, stdout, stderr io.Writer, logger applicationLog) int {
 	paths, options, err := parseWatchOptions(args, true)
 	if err == nil {
 		err = validateWatchOptions(options, "defaults")
@@ -192,7 +200,7 @@ func runWatchAdd(args []string, stdout, stderr io.Writer) int {
 			paths = append(paths, root.Path)
 		}
 	}
-	store, _, err := openWatchStore(options.dataDir, stderr)
+	store, _, err := openWatchStoreWithLogger(options.dataDir, stderr, logger, appCommandWatch)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 2
@@ -203,6 +211,9 @@ func runWatchAdd(args []string, stdout, stderr io.Writer) int {
 	for _, path := range paths {
 		result, addErr := store.RegisterCollectorSource(path, !options.defaults || !isDefaultWatchPath(path))
 		if addErr != nil {
+			if !errors.Is(addErr, tokenlogger.ErrInvalidCollectorSource) {
+				logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
+			}
 			fmt.Fprintf(stderr, "add source %q: %v\n", path, addErr)
 			failed = true
 			invalid = invalid || errors.Is(addErr, tokenlogger.ErrInvalidCollectorSource)
@@ -235,6 +246,10 @@ func isDefaultWatchPath(path string) bool {
 }
 
 func runWatchRemove(args []string, stdout, stderr io.Writer) int {
+	return runWatchRemoveWithLogger(args, stdout, stderr, discardApplicationLog{})
+}
+
+func runWatchRemoveWithLogger(args []string, stdout, stderr io.Writer, logger applicationLog) int {
 	selectors, options, err := parseWatchOptions(args, true)
 	if err == nil {
 		err = validateWatchOptions(options)
@@ -246,7 +261,7 @@ func runWatchRemove(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "usage: komposyn-lg watch remove <source-or-id> [<source-or-id>...] [--data-dir <path>]")
 		return 1
 	}
-	store, _, err := openWatchStore(options.dataDir, stderr)
+	store, _, err := openWatchStoreWithLogger(options.dataDir, stderr, logger, appCommandWatch)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 2
@@ -255,6 +270,7 @@ func runWatchRemove(args []string, stdout, stderr io.Writer) int {
 	for _, selector := range selectors {
 		source, changed, removeErr := store.RemoveCollectorSource(selector)
 		if removeErr != nil {
+			logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
 			fmt.Fprintf(stderr, "remove source %q: %v\n", selector, removeErr)
 			return 2
 		}
@@ -277,6 +293,10 @@ type sourceListOutput struct {
 }
 
 func runWatchList(args []string, stdout, stderr io.Writer) int {
+	return runWatchListWithLogger(args, stdout, stderr, discardApplicationLog{})
+}
+
+func runWatchListWithLogger(args []string, stdout, stderr io.Writer, logger applicationLog) int {
 	_, options, err := parseWatchOptions(args, false)
 	if err == nil {
 		err = validateWatchOptions(options, "format")
@@ -285,7 +305,7 @@ func runWatchList(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	store, _, err := openWatchStore(options.dataDir, stderr)
+	store, _, err := openWatchStoreWithLogger(options.dataDir, stderr, logger, appCommandWatch)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 2
@@ -293,6 +313,7 @@ func runWatchList(args []string, stdout, stderr io.Writer) int {
 	defer store.Close()
 	sources, err := store.ListCollectorSources(false)
 	if err != nil {
+		logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
 		fmt.Fprintf(stderr, "list sources: %v\n", err)
 		return 2
 	}
@@ -318,8 +339,13 @@ func runWatchList(args []string, stdout, stderr io.Writer) int {
 }
 
 func configuredWatchInterval(dataDir string) time.Duration {
+	return configuredWatchIntervalWithLogger(dataDir, discardApplicationLog{}, appCommandWatch)
+}
+
+func configuredWatchIntervalWithLogger(dataDir string, logger applicationLog, command appCommand) time.Duration {
 	settings, err := loadSettings(filepath.Join(dataDir, "settings.json"), dataDir)
 	if err != nil {
+		logger.Event(appLogSettingsLoadFailed, appLogCodeSettingsLoad, command, 0)
 		return 5 * time.Second
 	}
 	return settings.collectorPollInterval()
@@ -344,6 +370,14 @@ func staleWindow(interval time.Duration) time.Duration {
 }
 
 func runWatchStart(args []string, stdout, stderr io.Writer) int {
+	return runWatchStartWithLogger(args, stdout, stderr, discardApplicationLog{})
+}
+
+func runWatchStartWithLogger(args []string, stdout, stderr io.Writer, logger applicationLog) int {
+	return runWatchStartWithLauncher(args, stdout, stderr, logger, startDetachedCollector, 10*time.Second, 50*time.Millisecond)
+}
+
+func runWatchStartWithLauncher(args []string, stdout, stderr io.Writer, logger applicationLog, launch func(string, []string) error, readinessTimeout, readinessInterval time.Duration) int {
 	_, options, err := parseWatchOptions(args, false)
 	if err == nil {
 		err = validateWatchOptions(options, "interval")
@@ -352,17 +386,18 @@ func runWatchStart(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	store, dataDir, err := openWatchStore(options.dataDir, stderr)
+	store, dataDir, err := openWatchStoreWithLogger(options.dataDir, stderr, logger, appCommandWatch)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 2
 	}
-	interval := configuredWatchInterval(dataDir)
+	interval := configuredWatchIntervalWithLogger(dataDir, logger, appCommandWatch)
 	if options.intervalSet {
 		interval = options.interval
 	}
 	sources, err := store.ListCollectorSources(true)
 	if err != nil {
+		logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
 		store.Close()
 		fmt.Fprintf(stderr, "list enabled sources: %v\n", err)
 		return 2
@@ -374,12 +409,14 @@ func runWatchStart(args []string, stdout, stderr io.Writer) int {
 	}
 	status, err := store.CollectorRuntimeStatus(staleWindow(interval))
 	if err != nil {
+		logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
 		store.Close()
 		fmt.Fprintf(stderr, "read collector status: %v\n", err)
 		return 2
 	}
 	if options.intervalSet {
 		if err := persistWatchInterval(dataDir, interval); err != nil {
+			logger.Event(appLogCommandFailed, appLogCodeSettingsUpdate, appCommandWatch, 2)
 			store.Close()
 			fmt.Fprintf(stderr, "save collector interval: %v\n", err)
 			return 2
@@ -392,25 +429,28 @@ func runWatchStart(args []string, stdout, stderr io.Writer) int {
 	}
 	instanceID, err := tokenlogger.NewCollectorInstanceID()
 	if err != nil {
+		logger.Event(appLogCommandFailed, appLogCodeCollectorAcquire, appCommandWatch, 2)
 		store.Close()
 		fmt.Fprintln(stderr, err)
 		return 2
 	}
 	executable, err := os.Executable()
 	if err != nil {
+		logger.Event(appLogCommandFailed, appLogCodeProcessLaunch, appCommandWatch, 2)
 		store.Close()
 		fmt.Fprintf(stderr, "resolve executable: %v\n", err)
 		return 2
 	}
 	store.Close()
 	childArgs := []string{"watch", "serve", "--data-dir", dataDir, "--interval", interval.String(), "--instance", instanceID}
-	if err := startDetachedCollector(executable, childArgs); err != nil {
+	if err := launch(executable, childArgs); err != nil {
+		logger.Event(appLogCommandFailed, appLogCodeProcessLaunch, appCommandWatch, 2)
 		fmt.Fprintf(stderr, "start background collector: %v\n", err)
 		return 2
 	}
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(readinessTimeout)
 	for time.Now().Before(deadline) {
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(readinessInterval)
 		check, _, openErr := openWatchStore(dataDir, io.Discard)
 		if openErr != nil {
 			continue
@@ -425,11 +465,16 @@ func runWatchStart(args []string, stdout, stderr io.Writer) int {
 			return 0
 		}
 	}
-	fmt.Fprintln(stderr, "collector did not publish a ready heartbeat within 10s")
+	logger.Event(appLogCollectorFailed, appLogCodeCollectorReadiness, appCommandWatch, 2)
+	fmt.Fprintf(stderr, "collector did not publish a ready heartbeat within %s\n", readinessTimeout)
 	return 2
 }
 
 func runWatchStatus(args []string, stdout, stderr io.Writer) int {
+	return runWatchStatusWithLogger(args, stdout, stderr, discardApplicationLog{})
+}
+
+func runWatchStatusWithLogger(args []string, stdout, stderr io.Writer, logger applicationLog) int {
 	_, options, err := parseWatchOptions(args, false)
 	if err == nil {
 		err = validateWatchOptions(options, "format")
@@ -438,7 +483,7 @@ func runWatchStatus(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	store, _, err := openWatchStore(options.dataDir, stderr)
+	store, _, err := openWatchStoreWithLogger(options.dataDir, stderr, logger, appCommandWatch)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 2
@@ -446,16 +491,19 @@ func runWatchStatus(args []string, stdout, stderr io.Writer) int {
 	defer store.Close()
 	status, err := store.CollectorRuntimeStatus(0)
 	if err != nil {
+		logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
 		fmt.Fprintf(stderr, "read collector status: %v\n", err)
 		return 2
 	}
 	status, err = store.CollectorRuntimeStatus(staleWindow(status.Interval))
 	if err != nil {
+		logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
 		fmt.Fprintf(stderr, "read collector status: %v\n", err)
 		return 2
 	}
 	if options.format == "json" {
 		if err := json.NewEncoder(stdout).Encode(status); err != nil {
+			logger.Event(appLogCommandFailed, appLogCodeReportRender, appCommandWatch, 2)
 			fmt.Fprintf(stderr, "write collector status: %v\n", err)
 			return 2
 		}
@@ -477,6 +525,10 @@ func runWatchStatus(args []string, stdout, stderr io.Writer) int {
 }
 
 func runWatchStop(args []string, stdout, stderr io.Writer) int {
+	return runWatchStopWithLogger(args, stdout, stderr, discardApplicationLog{})
+}
+
+func runWatchStopWithLogger(args []string, stdout, stderr io.Writer, logger applicationLog) int {
 	_, options, err := parseWatchOptions(args, false)
 	if err == nil {
 		err = validateWatchOptions(options, "timeout")
@@ -485,19 +537,21 @@ func runWatchStop(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	store, _, err := openWatchStore(options.dataDir, stderr)
+	store, _, err := openWatchStoreWithLogger(options.dataDir, stderr, logger, appCommandWatch)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 2
 	}
 	status, err := store.CollectorRuntimeStatus(0)
 	if err != nil {
+		logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
 		store.Close()
 		fmt.Fprintf(stderr, "read collector status: %v\n", err)
 		return 2
 	}
 	status, err = store.CollectorRuntimeStatus(staleWindow(status.Interval))
 	if err != nil {
+		logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
 		store.Close()
 		fmt.Fprintf(stderr, "read collector status: %v\n", err)
 		return 2
@@ -509,6 +563,7 @@ func runWatchStop(args []string, stdout, stderr io.Writer) int {
 	}
 	requested, err := store.RequestCollectorStop()
 	if err != nil {
+		logger.Event(appLogCommandFailed, appLogCodeCollectorStop, appCommandWatch, 2)
 		store.Close()
 		fmt.Fprintf(stderr, "request collector stop: %v\n", err)
 		return 2
@@ -522,6 +577,7 @@ func runWatchStop(args []string, stdout, stderr io.Writer) int {
 	for time.Now().Before(deadline) {
 		status, statusErr := store.CollectorRuntimeStatus(0)
 		if statusErr != nil {
+			logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
 			store.Close()
 			fmt.Fprintf(stderr, "read collector status: %v\n", statusErr)
 			return 2
@@ -534,6 +590,7 @@ func runWatchStop(args []string, stdout, stderr io.Writer) int {
 		time.Sleep(50 * time.Millisecond)
 	}
 	store.Close()
+	logger.Event(appLogCommandFailed, appLogCodeCollectorStop, appCommandWatch, 3)
 	fmt.Fprintln(stderr, "collector did not stop before timeout; retry 'watch stop' after the current atomic import completes")
 	return 3
 }
@@ -551,7 +608,7 @@ func runForegroundWatchWithLogger(args []string, stdout, stderr io.Writer, ctx c
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	store, dataDir, err := openWatchStore(options.dataDir, stderr)
+	store, dataDir, err := openWatchStoreWithLogger(options.dataDir, stderr, logger, appCommandWatch)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 2
@@ -571,7 +628,7 @@ func runForegroundWatchWithLogger(args []string, stdout, stderr io.Writer, ctx c
 		fmt.Fprintln(stderr, "watch foreground requires a source or an enabled registered source")
 		return 1
 	}
-	interval := configuredWatchInterval(dataDir)
+	interval := configuredWatchIntervalWithLogger(dataDir, logger, appCommandWatch)
 	if options.intervalSet {
 		interval = options.interval
 	}
@@ -593,31 +650,37 @@ func runForegroundWatchWithLogger(args []string, stdout, stderr io.Writer, ctx c
 	terminalState, terminalError := "stopped", ""
 	logger.Event(appLogCollectorStarted, appLogCodeNone, appCommandWatch, 0)
 	defer func() {
-		_ = store.ReleaseCollectorLease(instanceID, terminalState, terminalError)
-		if terminalState == "failed" {
-			logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
-		} else {
+		if releaseErr := store.ReleaseCollectorLease(instanceID, terminalState, terminalError); releaseErr != nil {
+			logger.Event(appLogCollectorFailed, appLogCodeCollectorRelease, appCommandWatch, 2)
+		}
+		if terminalState != "failed" {
 			logger.Event(appLogCollectorStopped, appLogCodeNone, appCommandWatch, 0)
 		}
 	}()
 	if err := store.MarkCollectorReady(instanceID); err != nil {
 		terminalState, terminalError = "failed", err.Error()
+		logger.Event(appLogCollectorFailed, appLogCodeCollectorReadiness, appCommandWatch, 2)
 		fmt.Fprintf(stderr, "publish foreground collector readiness: %v\n", err)
 		return 2
 	}
 	collector, err := tokenlogger.NewCollector(store, roots, interval)
 	if err != nil {
 		terminalState, terminalError = "failed", err.Error()
+		logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
 		fmt.Fprintf(stderr, "create collector: %v\n", err)
 		return 2
 	}
 	fmt.Fprintf(stdout, "watching %d source root(s) every %s instance=%s recovered_stale=%t; press Ctrl-C to stop\n", len(roots), interval, instanceID, recovered)
 	completedPoll := false
 	runHealth := collector.Health()
+	lastHealthStatus := ""
+	lastSummaryAt := time.Time{}
+	pollFailureActive := false
 	for {
 		stop, heartbeatErr := store.HeartbeatCollector(instanceID)
 		if heartbeatErr != nil {
 			terminalState, terminalError = "failed", heartbeatErr.Error()
+			logger.Event(appLogCollectorFailed, appLogCodeCollectorHeartbeat, appCommandWatch, 2)
 			fmt.Fprintf(stderr, "foreground collector heartbeat: %v\n", heartbeatErr)
 			return 2
 		}
@@ -629,24 +692,28 @@ func runForegroundWatchWithLogger(args []string, stdout, stderr io.Writer, ctx c
 			registeredSources, roots, err = enabledRegisteredWatchRoots(store)
 			if err != nil {
 				terminalState, terminalError = "failed", err.Error()
+				logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
 				fmt.Fprintf(stderr, "reload enabled sources: %v\n", err)
 				return 2
 			}
 			collector, err = tokenlogger.NewCollector(store, roots, interval)
 			if err != nil {
 				terminalState, terminalError = "failed", err.Error()
+				logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
 				fmt.Fprintf(stderr, "create collector: %v\n", err)
 				return 2
 			}
 		}
 		if err := store.BeginCollectorPoll(instanceID, len(roots)); err != nil {
 			terminalState, terminalError = "failed", err.Error()
+			logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
 			fmt.Fprintf(stderr, "begin foreground collector poll: %v\n", err)
 			return 2
 		}
 		stop, heartbeatErr = store.HeartbeatCollector(instanceID)
 		if heartbeatErr != nil {
 			terminalState, terminalError = "failed", heartbeatErr.Error()
+			logger.Event(appLogCollectorFailed, appLogCodeCollectorHeartbeat, appCommandWatch, 2)
 			fmt.Fprintf(stderr, "foreground collector heartbeat: %v\n", heartbeatErr)
 			return 2
 		}
@@ -654,27 +721,33 @@ func runForegroundWatchWithLogger(args []string, stdout, stderr io.Writer, ctx c
 			writeStoppedWatchSummary(stdout, runHealth)
 			return 0
 		}
+		pollStarted := time.Now()
 		result, pollErr, heartbeatErr, stop := pollWithLeaseHeartbeat(ctx, store, instanceID, collector, staleWindow(interval))
+		pollDuration := time.Since(pollStarted).Milliseconds()
 		completedPoll = true
 		health := collector.Health()
 		runHealth = accumulateWatchHealth(runHealth, result, health)
 		if err := store.CompleteCollectorPoll(instanceID, result, health, pollErr); err != nil {
 			terminalState, terminalError = "failed", err.Error()
+			logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
 			fmt.Fprintf(stderr, "complete foreground collector poll: %v\n", err)
 			return 2
 		}
 		if err := updateRegisteredSourceHealth(store, registeredSources, health); err != nil {
 			terminalState, terminalError = "failed", err.Error()
+			logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
 			fmt.Fprintf(stderr, "persist source health: %v\n", err)
 			return 2
 		}
 		writeWatchPoll(stdout, result, collector.Health())
-		if pollErr != nil && !errors.Is(pollErr, context.Canceled) && !errors.Is(pollErr, context.DeadlineExceeded) {
+		if pollErr != nil && heartbeatErr == nil && !expectedCollectorCancellation(ctx, pollErr) {
 			fmt.Fprintf(stderr, "collector poll: %v\n", pollErr)
-			logger.Event(appLogCollectorFailed, appLogCodeCollectorPoll, appCommandWatch, 2)
 		}
+		logPollFailureEpisode(logger, appCommandWatch, ctx, pollErr, heartbeatErr, &pollFailureActive)
+		logCollectorHealthAndSummary(logger, appCommandWatch, health.Status, pollDuration, result, runHealth, &lastHealthStatus, &lastSummaryAt)
 		if heartbeatErr != nil {
 			terminalState, terminalError = "failed", heartbeatErr.Error()
+			logger.Event(appLogCollectorFailed, appLogCodeCollectorHeartbeat, appCommandWatch, 2)
 			fmt.Fprintf(stderr, "foreground collector heartbeat: %v\n", heartbeatErr)
 			return 2
 		}
@@ -685,6 +758,7 @@ func runForegroundWatchWithLogger(args []string, stdout, stderr io.Writer, ctx c
 		stop, heartbeatErr = waitWithLeaseHeartbeat(ctx, store, instanceID, interval, staleWindow(interval))
 		if heartbeatErr != nil {
 			terminalState, terminalError = "failed", heartbeatErr.Error()
+			logger.Event(appLogCollectorFailed, appLogCodeCollectorHeartbeat, appCommandWatch, 2)
 			fmt.Fprintf(stderr, "foreground collector heartbeat: %v\n", heartbeatErr)
 			return 2
 		}
@@ -714,6 +788,65 @@ func accumulateWatchHealth(run tokenlogger.CollectorHealth, result tokenlogger.I
 	run.DiscoveryFailures = latest.DiscoveryFailures
 	run.Roots = latest.Roots
 	return run
+}
+
+func collectorHealthCode(status string) appLogCode {
+	switch status {
+	case "healthy", "running":
+		return appLogCodeCollectorHealthRunning
+	case "degraded":
+		return appLogCodeCollectorHealthDegraded
+	case "stale":
+		return appLogCodeCollectorHealthStale
+	default:
+		return appLogCodeNone
+	}
+}
+
+func expectedCollectorCancellation(ctx context.Context, err error) bool {
+	return err != nil && ctx != nil && ctx.Err() != nil && errors.Is(err, context.Canceled)
+}
+
+func logPollFailureEpisode(logger applicationLog, command appCommand, ctx context.Context, pollErr, heartbeatErr error, active *bool) {
+	unexpected := pollErr != nil && heartbeatErr == nil && !expectedCollectorCancellation(ctx, pollErr)
+	if unexpected && !*active {
+		logger.Event(appLogCollectorFailed, appLogCodeCollectorPoll, command, 2)
+	}
+	*active = unexpected
+}
+
+func outcomeCounts(result tokenlogger.ImportResult) appLogOutcomeCounts {
+	return appLogOutcomeCounts{
+		Imported: int64(result.Receipt.Imported), Duplicates: int64(result.Receipt.Duplicates),
+		IgnoredNonUsage: int64(result.Outcomes.IgnoredNonUsage), UnchangedSnapshot: int64(result.Outcomes.UnchangedSnapshot),
+		DeferredIncompleteTail: int64(result.Outcomes.DeferredIncompleteTail), UnsupportedUsage: int64(result.Outcomes.UnsupportedUsage),
+		MalformedRecord: int64(result.Outcomes.MalformedRecord), FailedSource: int64(result.Outcomes.FailedSource),
+	}
+}
+
+func cumulativeOutcomeCounts(health tokenlogger.CollectorHealth) appLogOutcomeCounts {
+	return appLogOutcomeCounts{
+		Imported: int64(health.Imported), Duplicates: int64(health.Duplicates),
+		IgnoredNonUsage: int64(health.Outcomes.IgnoredNonUsage), UnchangedSnapshot: int64(health.Outcomes.UnchangedSnapshot),
+		DeferredIncompleteTail: int64(health.Outcomes.DeferredIncompleteTail), UnsupportedUsage: int64(health.Outcomes.UnsupportedUsage),
+		MalformedRecord: int64(health.Outcomes.MalformedRecord), FailedSource: int64(health.Outcomes.FailedSource),
+	}
+}
+
+func logCollectorHealthAndSummary(logger applicationLog, command appCommand, status string, durationMillis int64, latest tokenlogger.ImportResult, cumulative tokenlogger.CollectorHealth, lastStatus *string, lastSummary *time.Time) {
+	code := collectorHealthCode(status)
+	if code == appLogCodeNone {
+		return
+	}
+	if *lastStatus != status {
+		logger.Event(appLogCollectorHealthChanged, code, command, 0)
+		*lastStatus = status
+	}
+	now := time.Now()
+	if lastSummary.IsZero() || now.Sub(*lastSummary) >= time.Minute {
+		logger.CollectorSummary(command, code, durationMillis, outcomeCounts(latest), cumulativeOutcomeCounts(cumulative))
+		*lastSummary = now
+	}
 }
 
 func enabledRegisteredWatchRoots(store *tokenlogger.Store) ([]tokenlogger.RegisteredSource, []string, error) {
@@ -746,7 +879,7 @@ func runWatchServeWithLogger(args []string, stderr io.Writer, ctx context.Contex
 		fmt.Fprintln(stderr, "invalid internal watch serve invocation")
 		return 1
 	}
-	store, _, err := openWatchStore(options.dataDir, io.Discard)
+	store, _, err := openWatchStoreWithLogger(options.dataDir, io.Discard, logger, appCommandWatch)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 2
@@ -772,24 +905,30 @@ func runWatchServeWithLogger(args []string, stderr io.Writer, ctx context.Contex
 	terminalState, terminalError := "stopped", ""
 	logger.Event(appLogCollectorStarted, appLogCodeNone, appCommandWatch, 0)
 	defer func() {
-		_ = store.ReleaseCollectorLease(options.instanceID, terminalState, terminalError)
-		if terminalState == "failed" {
-			logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
-		} else {
+		if releaseErr := store.ReleaseCollectorLease(options.instanceID, terminalState, terminalError); releaseErr != nil {
+			logger.Event(appLogCollectorFailed, appLogCodeCollectorRelease, appCommandWatch, 2)
+		}
+		if terminalState != "failed" {
 			logger.Event(appLogCollectorStopped, appLogCodeNone, appCommandWatch, 0)
 		}
 	}()
 	if err := store.MarkCollectorReady(options.instanceID); err != nil {
 		terminalState, terminalError = "failed", err.Error()
+		logger.Event(appLogCollectorFailed, appLogCodeCollectorReadiness, appCommandWatch, 2)
 		return 2
 	}
 	if recovered {
 		_, _ = recordDiagnostic(store, "reason=stale_collector_recovered", tokenlogger.DiagnosticCategoryCLI)
 	}
+	lastHealthStatus := ""
+	lastSummaryAt := time.Time{}
+	pollFailureActive := false
+	var runHealth tokenlogger.CollectorHealth
 	for {
 		stop, heartbeatErr := store.HeartbeatCollector(options.instanceID)
 		if heartbeatErr != nil {
 			terminalState, terminalError = "failed", heartbeatErr.Error()
+			logger.Event(appLogCollectorFailed, appLogCodeCollectorHeartbeat, appCommandWatch, 2)
 			return 2
 		}
 		if stop || ctx.Err() != nil {
@@ -798,6 +937,7 @@ func runWatchServeWithLogger(args []string, stderr io.Writer, ctx context.Contex
 		sources, listErr := store.ListCollectorSources(true)
 		if listErr != nil {
 			terminalState, terminalError = "failed", listErr.Error()
+			logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
 			return 2
 		}
 		roots := make([]string, 0, len(sources))
@@ -806,37 +946,45 @@ func runWatchServeWithLogger(args []string, stderr io.Writer, ctx context.Contex
 		}
 		if err := store.BeginCollectorPoll(options.instanceID, len(sources)); err != nil {
 			terminalState, terminalError = "failed", err.Error()
+			logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
 			return 2
 		}
 		collector, err := tokenlogger.NewCollector(store, roots, options.interval)
 		if err != nil {
 			terminalState, terminalError = "failed", err.Error()
+			logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
 			return 2
 		}
+		pollStarted := time.Now()
 		result, pollErr, heartbeatErr, stop := pollWithLeaseHeartbeat(ctx, store, options.instanceID, collector, staleWindow(options.interval))
-		if pollErr != nil && !errors.Is(pollErr, context.Canceled) && !errors.Is(pollErr, context.DeadlineExceeded) {
-			logger.Event(appLogCollectorFailed, appLogCodeCollectorPoll, appCommandWatch, 2)
-		}
+		pollDuration := time.Since(pollStarted).Milliseconds()
+		logPollFailureEpisode(logger, appCommandWatch, ctx, pollErr, heartbeatErr, &pollFailureActive)
 		if heartbeatErr != nil {
 			terminalState, terminalError = "failed", heartbeatErr.Error()
+			logger.Event(appLogCollectorFailed, appLogCodeCollectorHeartbeat, appCommandWatch, 2)
 			return 2
 		}
 		health := collector.Health()
+		runHealth = accumulateWatchHealth(runHealth, result, health)
 		if err := store.CompleteCollectorPoll(options.instanceID, result, health, pollErr); err != nil {
 			terminalState, terminalError = "failed", err.Error()
+			logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
 			return 2
 		}
 		if err := updateRegisteredSourceHealth(store, sources, health); err != nil {
 			terminalState, terminalError = "failed", err.Error()
+			logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
 			return 2
 		}
 		recordLogFailure()
+		logCollectorHealthAndSummary(logger, appCommandWatch, health.Status, pollDuration, result, runHealth, &lastHealthStatus, &lastSummaryAt)
 		if stop || ctx.Err() != nil {
 			return 0
 		}
 		stop, heartbeatErr = waitWithLeaseHeartbeat(ctx, store, options.instanceID, options.interval, staleWindow(options.interval))
 		if heartbeatErr != nil {
 			terminalState, terminalError = "failed", heartbeatErr.Error()
+			logger.Event(appLogCollectorFailed, appLogCodeCollectorHeartbeat, appCommandWatch, 2)
 			return 2
 		}
 		if stop || ctx.Err() != nil {
