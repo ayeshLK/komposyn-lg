@@ -36,6 +36,7 @@ func TestPublicCommandHelpDoesNotTouchDataDirectory(t *testing.T) {
 		{"watch", "list", "--help"}, {"watch", "start", "--help"}, {"watch", "status", "--help"},
 		{"watch", "stop", "--help"}, {"watch", "foreground", "--help"},
 		{"settings", "--help"}, {"report-issue", "--help"}, {"harness", "--help"},
+		{"logs", "--help"}, {"logs", "show", "--help"},
 		{"completion", "--help"},
 	}
 	for _, command := range publicCLICommands {
@@ -113,7 +114,7 @@ func TestShellCompletionIsDeterministicAndPublicOnly(t *testing.T) {
 					t.Errorf("completion omits public subcommand %q", subcommand)
 				}
 			}
-			options := []string{"--help", "--version", "--data-dir", "--format", "--from", "--to", "--project", "--session", "--client", "--provider", "--model", "--group-by", "--timezone", "--interval", "--timeout", "--defaults", "--collector", "--auto-start", "--output"}
+			options := []string{"--help", "--version", "--data-dir", "--format", "--from", "--to", "--project", "--session", "--client", "--provider", "--model", "--group-by", "--timezone", "--interval", "--timeout", "--defaults", "--collector", "--auto-start", "--output", "--since", "--level"}
 			for _, option := range options {
 				completionForm := option
 				if shell == "fish" {
@@ -215,6 +216,16 @@ func TestBashAndZshCompletionResultsMatchCommandParsers(t *testing.T) {
 						t.Errorf("completion suggested rejected watch format %q: %v", candidate, err)
 					}
 				}
+			},
+		},
+		{
+			name: "log formats",
+			bash: `COMP_WORDS=(komposyn-lg logs show --format ""); COMP_CWORD=4; _komposyn_lg; printf '%s\n' "${COMPREPLY[@]}"`,
+			zsh:  `words=(komposyn-lg logs show --format ""); CURRENT=5; _komposyn-lg`,
+			check: func(t *testing.T, candidates []string) {
+				assertContains(t, candidates, "text")
+				assertContains(t, candidates, "json")
+				assertNotContains(t, candidates, "csv")
 			},
 		},
 		{

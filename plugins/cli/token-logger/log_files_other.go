@@ -33,6 +33,9 @@ func inspectLogTarget(string) (bool, int64, error) {
 func openPrivateLogFile(string, int, os.FileMode) (*os.File, error) {
 	return nil, errors.New("private log files are unsupported on this platform")
 }
+func openReadOnlyLogFile(string) (*os.File, error) {
+	return nil, errors.New("safe log inspection is unsupported on this platform")
+}
 func renameLogFile(string, string) error {
 	return errors.New("private log files are unsupported on this platform")
 }

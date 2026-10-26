@@ -26,7 +26,11 @@ accept raw arguments, raw errors, provider paths, project/session names, source
 records, prompts, or responses. They are separate from SQLite and may be shared
 by CLI processes that use different data directories. See
 [local troubleshooting logs](local-logs.md) for exact paths, limits, rotation,
-and safe inspection guidance. Review log files before sharing them.
+and safe inspection guidance. `komposyn-lg logs show` reads managed logs
+without opening SQLite or initializing the writer. Its local output includes
+exact timestamps and process/run identifiers; review it before sharing. The
+reader omits unknown event text and fields, but local output is not a reviewed
+external export.
 
 ## What is not stored by default
 

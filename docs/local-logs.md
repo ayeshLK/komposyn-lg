@@ -76,7 +76,44 @@ alone. An unusable target or failed write is not repaired automatically.
 
 ## Inspecting and removing logs
 
-On Unix-like systems, inspect recent events with:
+Inspect locally with the bounded CLI reader:
+
+```sh
+komposyn-lg logs show
+komposyn-lg logs show --since 2026-10-20T00:00:00Z --level warn --limit 20
+komposyn-lg logs show --format json
+```
+
+The command reads only `klg.log` through `.3`. It does not create the log
+directory, initialize the writer, open SQLite, or start collection. Missing
+logs are reported as unavailable with exit status 0; unsafe/unreadable targets
+produce exit status 2. Invalid options produce status 1. `--since` requires an
+RFC3339 timestamp with `Z` or an explicit numeric offset; comparisons use UTC.
+`--level` is a minimum severity (`warn` includes warnings and errors). The
+default record limit is 50 and the hard limit is 200. The reader scans at most
+20 MiB and 25,000 physical lines per invocation, with a cooperative two-second
+work deadline. Each line is capped at 8 KiB, text fields at 256 bytes, and
+nested JSON values are rejected.
+The JSON response has its own `format_version: 1`, independent of harness
+protocol-v1. It includes availability, byte/entry counts, missing files,
+retention gaps, malformed and unsupported counts, and truncation indicators.
+
+Records are ordered by managed file priority (`klg.log`, then `.1`, `.2`, `.3`)
+and reverse physical line order within each file. Multiprocess timestamps and
+file order do not establish one global chronology. A concurrent read snapshots
+each opened file's size and may overlap a rotation; it is not one atomic view.
+The reader skips a partial leading line when it begins at the scan window and
+an incomplete final line, marking the response truncated. Archive removal or
+replacement during a read can result in missing/unreadable indicators.
+
+Text output projects only known event, severity, command, and code values plus
+bounded version/process metadata. Unknown fields and event values are counted
+as unsupported and omitted. JSON output is also local diagnostic material: it
+includes exact timestamps and process/run identifiers. It is not an export or
+anonymous report; review it before sharing. This inspection path remains
+available when SQLite is missing, busy, unsupported, or unopenable.
+
+For manual inspection, on Unix-like systems:
 
 ```sh
 tail -n 100 ~/.komposyn/token-logger/klg.log

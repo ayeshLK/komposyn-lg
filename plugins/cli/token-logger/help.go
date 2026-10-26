@@ -22,7 +22,7 @@ import (
 
 var publicCLICommands = []string{
 	"help", "version", "import", "usage", "cost", "projects", "sessions",
-	"watch", "settings", "report-issue", "harness", "completion",
+	"watch", "settings", "report-issue", "logs", "harness", "completion",
 }
 
 var publicWatchCommands = []string{"add", "remove", "list", "start", "status", "stop", "foreground"}
@@ -48,6 +48,7 @@ Commands:
   watch           Register sources and run foreground or detached collection
   settings        Set embedded collector preferences
   report-issue    Export pending sanitized diagnostics for review
+  logs            Inspect bounded local troubleshooting logs
   harness         Run the versioned JSONL integration protocol
   version         Print the embedded CLI version
   completion      Print shell completion for bash, zsh, fish, or powershell
@@ -296,6 +297,32 @@ overwrites the destination, sends network requests, or marks diagnostics as
 reviewed. Review the archive before sharing it. Exit status: 0 success,
 1 invalid arguments, 2 database/archive error.
 `,
+	"logs": `Usage:
+  komposyn-lg logs show [--since <RFC3339>] [--level <debug|info|warn|error>]
+    [--limit <1-200>] [--format text|json]
+
+Inspects only klg.log and its three managed archives. It does not open or
+create the SQLite database, initialize the log writer, or start collection.
+--since requires an RFC3339 timestamp with an explicit UTC offset. --level is
+a minimum severity. Output is newest physical line first within each file,
+with the active file before older archives; this is not global chronology.
+Default scan limit is 20 MiB (hard cap); scanning stops after 25,000 entries
+or a cooperative 2-second work deadline. The default response has 50 records
+(hard cap 200), lines/events are capped at 8 KiB, text fields at 256 bytes,
+and nested values are rejected. Missing, malformed,
+unsupported, truncated, and unreadable evidence is indicated. Text and JSON
+output are local troubleshooting data and may identify a process/run; review
+before sharing. Exit status: 0 inspected or unavailable, 1 invalid arguments,
+2 unsafe/unreadable log directory/file or output failure.
+`,
+	"logs show": `Usage:
+  komposyn-lg logs show [--since <RFC3339>] [--level <debug|info|warn|error>]
+    [--limit <1-200>] [--format text|json]
+
+Reads only managed local JSONL logs, without opening SQLite or initializing the
+writer. See "komposyn-lg help logs" for bounds, ordering, privacy, and status
+details.
+`,
 	"harness": `Usage:
   komposyn-lg harness
 
@@ -352,6 +379,10 @@ func helpTargetFromCommand(args []string) []string {
 			}
 		case "watch":
 			if containsString(publicWatchCommands, subcommand) {
+				return []string{command, subcommand}
+			}
+		case "logs":
+			if subcommand == "show" {
 				return []string{command, subcommand}
 			}
 		}
@@ -414,7 +445,7 @@ _komposyn_lg() {
   subcmd="${COMP_WORDS[2]}"
   if [[ "$cmd" == "sessions" && "$subcmd" != "list" && "$subcmd" != "show" ]]; then subcmd=""; fi
   if [[ ${COMP_CWORD} -eq 1 ]]; then
-    COMPREPLY=( $(compgen -W "help version import usage cost projects sessions watch settings report-issue harness completion --help -h --version" -- "$cur") )
+    COMPREPLY=( $(compgen -W "help version import usage cost projects sessions watch settings report-issue logs harness completion --help -h --version" -- "$cur") )
   elif [[ "$cmd" == "watch" && ${COMP_CWORD} -eq 2 ]]; then
     if [[ "$cur" == -* ]]; then
       COMPREPLY=( $(compgen -W "--help -h --data-dir --interval" -- "$cur") )
@@ -425,7 +456,7 @@ _komposyn_lg() {
     if [[ "$cur" == -* ]]; then
       COMPREPLY=( $(compgen -W "--help -h" -- "$cur") )
     else
-      COMPREPLY=( $(compgen -W "help version import usage cost projects sessions watch settings report-issue harness completion" -- "$cur") )
+      COMPREPLY=( $(compgen -W "help version import usage cost projects sessions watch settings report-issue logs harness completion" -- "$cur") )
     fi
   elif [[ "$cmd" == "help" && ${COMP_CWORD} -eq 3 ]]; then
     case "${COMP_WORDS[2]}" in
@@ -454,12 +485,14 @@ _komposyn_lg() {
       projects:list) formats="table json csv" ;;
       projects:show) formats="table json" ;;
       projects:inspect) formats="text json" ;;
-      watch:list|watch:status) formats="text json" ;;
+      watch:list|watch:status|logs:show) formats="text json" ;;
       *) formats="" ;;
     esac
     COMPREPLY=( $(compgen -W "$formats" -- "$cur") )
   elif [[ "$prev" == "--collector" || "$prev" == "--auto-start" ]]; then
     COMPREPLY=( $(compgen -W "on off" -- "$cur") )
+  elif [[ "$cmd" == "logs" && "$prev" == "--level" ]]; then
+    COMPREPLY=( $(compgen -W "debug info warn error" -- "$cur") )
   else
     case "$cmd:$subcmd" in
       import:*) options="--help -h --data-dir --format" ;;
@@ -476,6 +509,7 @@ _komposyn_lg() {
       watch:start|watch:foreground|watch:*) options="--help -h --data-dir --interval" ;;
       settings:*) options="--help -h --data-dir --collector --auto-start" ;;
       report-issue:*) options="--help -h --data-dir --output" ;;
+      logs:show) options="--help -h --since --level --limit --format" ;;
       version:*) options="--help -h --version" ;;
       *) options="--help -h" ;;
     esac
@@ -483,7 +517,7 @@ _komposyn_lg() {
       options="--help -h"
     fi
     case "$prev" in
-      --data-dir|--from|--to|--project|--session|--client|--provider|--model|--group-by|--timezone|--interval|--timeout|--output) options="" ;;
+      --data-dir|--since|--from|--to|--project|--session|--client|--provider|--model|--group-by|--timezone|--interval|--timeout|--output) options="" ;;
     esac
     COMPREPLY=( $(compgen -W "$options" -- "$cur") )
   fi
@@ -510,6 +544,7 @@ _komposyn-lg() {
     'watch:Manage collection'
     'settings:Set collector preferences'
     'report-issue:Export sanitized diagnostics'
+    'logs:Inspect local troubleshooting logs'
     'harness:Run JSONL protocol'
     'completion:Print shell completion'
     '--help:Show help'
@@ -525,7 +560,7 @@ _komposyn-lg() {
       compadd add remove list start status stop foreground
     fi
   elif [[ ${words[2]} == help ]] && (( CURRENT == 3 )); then
-    if [[ ${words[CURRENT]} == -* ]]; then compadd -- --help -h; else compadd help version import usage cost projects sessions watch settings report-issue harness completion; fi
+    if [[ ${words[CURRENT]} == -* ]]; then compadd -- --help -h; else compadd help version import usage cost projects sessions watch settings report-issue logs harness completion; fi
   elif [[ ${words[2]} == help && ${words[3]} == watch ]] && (( CURRENT == 4 )); then
     if [[ ${words[CURRENT]} == -* ]]; then compadd -- --help -h; else compadd add remove list start status stop foreground; fi
   elif [[ ${words[2]} == help && ${words[3]} == projects ]] && (( CURRENT == 4 )); then
@@ -545,12 +580,14 @@ _komposyn-lg() {
       projects:list) compadd table json csv ;;
       projects:show) compadd table json ;;
       projects:inspect) compadd text json ;;
-      watch:list|watch:status) compadd text json ;;
+      watch:list|watch:status|logs:show) compadd text json ;;
     esac
   elif [[ ${words[CURRENT-1]} == --collector || ${words[CURRENT-1]} == --auto-start ]]; then
     compadd on off
-  elif [[ ${words[CURRENT-1]} == --data-dir || ${words[CURRENT-1]} == --from || ${words[CURRENT-1]} == --to || ${words[CURRENT-1]} == --limit || ${words[CURRENT-1]} == --offset || ${words[CURRENT-1]} == --project || ${words[CURRENT-1]} == --session || ${words[CURRENT-1]} == --client || ${words[CURRENT-1]} == --provider || ${words[CURRENT-1]} == --model || ${words[CURRENT-1]} == --group-by || ${words[CURRENT-1]} == --timezone || ${words[CURRENT-1]} == --interval || ${words[CURRENT-1]} == --timeout || ${words[CURRENT-1]} == --output ]]; then
+  elif [[ ${words[CURRENT-1]} == --data-dir || ${words[CURRENT-1]} == --since || ${words[CURRENT-1]} == --from || ${words[CURRENT-1]} == --to || ${words[CURRENT-1]} == --limit || ${words[CURRENT-1]} == --offset || ${words[CURRENT-1]} == --project || ${words[CURRENT-1]} == --session || ${words[CURRENT-1]} == --client || ${words[CURRENT-1]} == --provider || ${words[CURRENT-1]} == --model || ${words[CURRENT-1]} == --group-by || ${words[CURRENT-1]} == --timezone || ${words[CURRENT-1]} == --interval || ${words[CURRENT-1]} == --timeout || ${words[CURRENT-1]} == --output ]]; then
     return
+  elif [[ ${words[CURRENT-1]} == --level ]]; then
+    compadd debug info warn error
   else
     case "$command:$subcommand" in
       import:*) compadd -- --help -h --data-dir --format ;;
@@ -567,6 +604,7 @@ _komposyn-lg() {
       version:*) compadd -- --help -h --version ;;
       settings:*) compadd -- --help -h --data-dir --collector --auto-start ;;
       report-issue:*) compadd -- --help -h --data-dir --output ;;
+      logs:show) compadd -- --help -h --since --level --limit --format ;;
       *) compadd -- --help -h ;;
     esac
   fi
@@ -574,8 +612,8 @@ _komposyn-lg() {
 `
 
 const fishCompletion = `# komposyn-lg completion for Fish
-complete -c komposyn-lg -f -n '__fish_use_subcommand' -a 'help version import usage cost projects sessions watch settings report-issue harness completion'
-complete -c komposyn-lg -f -n '__fish_seen_subcommand_from help; and not __fish_seen_subcommand_from version import usage cost projects sessions watch settings report-issue harness completion' -a 'help version import usage cost projects sessions watch settings report-issue harness completion'
+complete -c komposyn-lg -f -n '__fish_use_subcommand' -a 'help version import usage cost projects sessions watch settings report-issue logs harness completion'
+complete -c komposyn-lg -f -n '__fish_seen_subcommand_from help; and not __fish_seen_subcommand_from version import usage cost projects sessions watch settings report-issue logs harness completion' -a 'help version import usage cost projects sessions watch settings report-issue logs harness completion'
 complete -c komposyn-lg -f -n '__fish_seen_subcommand_from watch; and not __fish_seen_subcommand_from add remove list start status stop foreground' -a 'add remove list start status stop foreground'
 complete -c komposyn-lg -f -n '__fish_seen_subcommand_from projects; and not __fish_seen_subcommand_from list show inspect' -a 'list show inspect'
 complete -c komposyn-lg -f -n '__fish_seen_subcommand_from sessions; and not __fish_seen_subcommand_from list show' -a 'list show'
@@ -616,13 +654,17 @@ complete -c komposyn-lg -l defaults -n '__fish_seen_subcommand_from watch; and _
 complete -c komposyn-lg -l collector -r -a 'on off' -n '__fish_seen_subcommand_from settings' -d 'Embedded collector preference'
 complete -c komposyn-lg -l auto-start -r -a 'on off' -n '__fish_seen_subcommand_from settings' -d 'REPL collector auto-start preference'
 complete -c komposyn-lg -l output -r -n '__fish_seen_subcommand_from report-issue' -d 'Output archive path'
+complete -c komposyn-lg -l since -r -n '__fish_seen_subcommand_from logs' -d 'RFC3339 lower time bound'
+complete -c komposyn-lg -l level -r -a 'debug info warn error' -n '__fish_seen_subcommand_from logs' -d 'Minimum severity'
+complete -c komposyn-lg -l limit -r -n '__fish_seen_subcommand_from logs' -d 'Maximum records'
+complete -c komposyn-lg -l format -r -a 'text json' -n '__fish_seen_subcommand_from logs' -d 'Output format'
 `
 
 const powershellCompletion = `# komposyn-lg completion for PowerShell
 Register-ArgumentCompleter -Native -CommandName komposyn-lg,komposyn-lg.exe -ScriptBlock {
   param($wordToComplete, $commandAst, $cursorPosition)
   $words = @($commandAst.CommandElements | ForEach-Object { $_.ToString() })
-  $commands = @('help','version','import','usage','cost','projects','sessions','watch','settings','report-issue','harness','completion')
+  $commands = @('help','version','import','usage','cost','projects','sessions','watch','settings','report-issue','logs','harness','completion')
   $watch = @('add','remove','list','start','status','stop','foreground')
   $resources = @('list','show')
   $projectResources = @('list','show','inspect')
@@ -642,11 +684,13 @@ Register-ArgumentCompleter -Native -CommandName komposyn-lg,komposyn-lg.exe -Scr
       'projects:show' { $candidates = @('table','json'); break }
       'projects:inspect' { $candidates = @('text','json'); break }
       { $_ -eq 'watch:list' -or $_ -eq 'watch:status' } { $candidates = @('text','json'); break }
+      'logs:show' { $candidates = @('text','json'); break }
       default { $candidates = @() }
     }
   }
   elseif ($previous -eq '--collector' -or $previous -eq '--auto-start') { $candidates = @('on','off') }
-  elseif ($previous -in @('--data-dir','--from','--to','--limit','--offset','--project','--session','--client','--provider','--model','--group-by','--timezone','--interval','--timeout','--output')) { $candidates = @() }
+  elseif ($previous -eq '--level') { $candidates = @('debug','info','warn','error') }
+  elseif ($previous -in @('--data-dir','--since','--from','--to','--limit','--offset','--project','--session','--client','--provider','--model','--group-by','--timezone','--interval','--timeout','--output')) { $candidates = @() }
   elseif ($command -eq 'help' -and $elements.Count -eq 2) {
     if ($wordToComplete -like '-*') { $candidates = @('--help','-h') }
     else { $candidates = $commands }
@@ -687,6 +731,7 @@ Register-ArgumentCompleter -Native -CommandName komposyn-lg,komposyn-lg.exe -Scr
       { $_ -eq 'watch:start' -or $_ -eq 'watch:foreground' -or $_ -like 'watch:*' } { $candidates = @('--help','-h','--data-dir','--interval'); break }
       { $_ -like 'settings:*' } { $candidates = @('--help','-h','--data-dir','--collector','--auto-start'); break }
       { $_ -like 'report-issue:*' } { $candidates = @('--help','-h','--data-dir','--output'); break }
+      { $_ -like 'logs:show' } { $candidates = @('--help','-h','--since','--level','--limit','--format'); break }
       { $_ -like 'version:*' } { $candidates = @('--help','-h','--version'); break }
       default { $candidates = @('--help','-h') }
     }

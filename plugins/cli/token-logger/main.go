@@ -47,6 +47,11 @@ func main() {
 }
 
 func runProcess(args []string, input io.Reader, stdout, stderr io.Writer) int {
+	// Log inspection must not create the sink, rotate files, or append process
+	// lifecycle events while trying to inspect those same files.
+	if len(args) > 0 && args[0] == "logs" {
+		return runWithInputAndLogger(args, input, stdout, stderr, discardApplicationLog{})
+	}
 	logger := newProcessLogger(stderr)
 	command := commandForLog(args)
 	logger.Event(appLogProcessStarted, appLogCodeNone, command, 0)
@@ -163,6 +168,8 @@ func runWithInputAndLogger(args []string, input io.Reader, stdout, stderr io.Wri
 		return runSettings(args[1:], stdout, stderr)
 	case "report-issue":
 		return runReportIssue(args[1:], stdout, stderr)
+	case "logs":
+		return runLogs(args[1:], stdout, stderr, os.Getenv("TOKEN_LOGGER_LOG_DIR"), os.UserHomeDir)
 	default:
 		fmt.Fprintf(stderr, "unknown command %q; run komposyn-lg --help for usage\n", args[0])
 		return 1
