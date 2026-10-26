@@ -555,14 +555,17 @@ func (logger *eventLogger) Close() {
 }
 
 type jsonlLogSink struct {
-	dir       string
-	active    string
-	lockPath  string
-	maxFile   int64
-	archiveN  int
-	lockWait  time.Duration
-	lockSleep time.Duration
-	writeFile func(*os.File, []byte) (int, error)
+	dir          string
+	active       string
+	lockPath     string
+	maxFile      int64
+	archiveN     int
+	lockWait     time.Duration
+	lockSleep    time.Duration
+	writeFile    func(*os.File, []byte) (int, error)
+	truncateFile func(*os.File, int64) error
+	renameFile   func(string, string) error
+	removeFile   func(string) error
 }
 
 type jsonlBatchWriteError struct {
@@ -668,7 +671,11 @@ func (sink *jsonlLogSink) appendBatch(lines [][]byte) error {
 			}
 			n, writeErr := write(active, line)
 			if writeErr != nil || n != len(line) {
-				truncateErr := active.Truncate(size)
+				truncate := sink.truncateFile
+				if truncate == nil {
+					truncate = (*os.File).Truncate
+				}
+				truncateErr := truncate(active, size)
 				_ = active.Close()
 				active = nil
 				if truncateErr != nil {
@@ -727,6 +734,20 @@ func (sink *jsonlLogSink) archivePath(index int) string {
 	return fmt.Sprintf("%s.%d", sink.active, index)
 }
 
+func (sink *jsonlLogSink) renameLogFile(source, target string) error {
+	if sink.renameFile != nil {
+		return sink.renameFile(source, target)
+	}
+	return renameLogFile(source, target)
+}
+
+func (sink *jsonlLogSink) removeLogFile(path string) error {
+	if sink.removeFile != nil {
+		return sink.removeFile(path)
+	}
+	return removeLogFile(path)
+}
+
 func (sink *jsonlLogSink) recoverInterruptedRotation() error {
 	if err := sink.validateTargets(); err != nil {
 		return err
@@ -774,7 +795,7 @@ func (sink *jsonlLogSink) recoverInterruptedRotation() error {
 		return err
 	}
 	if firstExists {
-		return renameLogFile(first, sink.active)
+		return sink.renameLogFile(first, sink.active)
 	}
 	return nil
 }
@@ -798,7 +819,7 @@ func (sink *jsonlLogSink) pruneLegacyArchives() error {
 		if _, _, err := inspectLogTarget(path); err != nil {
 			return err
 		}
-		if err := removeLogFile(path); err != nil {
+		if err := sink.removeLogFile(path); err != nil {
 			return err
 		}
 	}
@@ -831,7 +852,7 @@ func (sink *jsonlLogSink) rotate() error {
 	if exists, _, err := inspectLogTarget(oldest); err != nil {
 		return err
 	} else if exists {
-		if err := removeLogFile(oldest); err != nil {
+		if err := sink.removeLogFile(oldest); err != nil {
 			return err
 		}
 	}
@@ -840,7 +861,7 @@ func (sink *jsonlLogSink) rotate() error {
 		if exists, _, err := inspectLogTarget(source); err != nil {
 			return err
 		} else if exists {
-			if err := renameLogFile(source, target); err != nil {
+			if err := sink.renameLogFile(source, target); err != nil {
 				return err
 			}
 		}
@@ -848,7 +869,7 @@ func (sink *jsonlLogSink) rotate() error {
 	if exists, _, err := inspectLogTarget(sink.active); err != nil {
 		return err
 	} else if exists {
-		if err := renameLogFile(sink.active, sink.archivePath(1)); err != nil {
+		if err := sink.renameLogFile(sink.active, sink.archivePath(1)); err != nil {
 			return err
 		}
 	}
