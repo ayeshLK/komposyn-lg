@@ -295,9 +295,11 @@ platforms.
 | Failed write plus failed truncation records uncertainty, does not replay a completed prefix, and recovers suppression/drop evidence | `TestFailedTruncationAccountsUncertainSummaryWithoutReplayingPrefix` |
 | Actual production event logger queue saturation, suppression/drop summaries, recovery, repeated/concurrent Close, and post-Close publication | `TestProductionEventLoggerPressureRecoveryAndClose` and `TestProductionEventLoggerPublishersRaceNormalClose` |
 | Close wait budget does not claim to cancel blocked filesystem work; release then joins worker | `TestProductionEventLoggerCloseBudgetDoesNotCancelBlockedFilesystemWork` |
-| Effective protected current-user ACL on directory, active file, stable lock, and rotated archive | `TestPrivateWindowsLogDirectoryAndFiles`; requires native Windows CI execution |
+| Effective protected current-user ACL on directory, active file, stable lock, and rotated archive | `TestPrivateWindowsLogDirectoryAndFiles`; passed on native Windows x64 and ARM in PR #60 CI |
 | Repeated production collector resource comparison with accounting, CPU, memory, I/O, log volume, suppression/drop, and shutdown | This section and `TestIssue56ProductionLoggerResourceComparison`; native Linux run completed |
-| Native macOS and Windows package/lifecycle behavior | Outstanding until the follow-up PR's native macOS and Windows CI jobs complete |
+| Native macOS and Windows package/lifecycle behavior, including Windows ACL assertions | Passed in [PR #60 CI](https://github.com/ayeshLK/komposyn-lg/actions/runs/40361655858): macOS, Windows x64, and Windows ARM native tests |
+| Existing six-target published-upgrade jobs | All six passed in [PR #60 CI](https://github.com/ayeshLK/komposyn-lg/actions/runs/40361655858); these are CI checks and do not publish a release |
+| Race, Linux tests, historical fixture artifacts, and CodeQL | Passed in [PR #60 CI](https://github.com/ayeshLK/komposyn-lg/actions/runs/40361655858) and [CodeQL](https://github.com/ayeshLK/komposyn-lg/actions/runs/40361655860) |
 
 ### Validation on the follow-up candidate
 
@@ -314,9 +316,9 @@ make check          passed, including installer trust, release provenance,
 git diff --check    passed
 ```
 
-Windows test code also compiled with
+Windows test code also compiled locally with
 `GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go test -c -o /tmp/komposyn-lg-issue56-windows.test.exe ./plugins/cli/token-logger`.
-That is compile evidence only. Native Windows ACL execution and native macOS
-runtime validation remain dependent on PR CI. Post-merge master CI and CodeQL
-were both green on 2026-10-26 (runs `40351736761` and `40351736678`); those
-results describe the base commit, not this follow-up candidate.
+That is compile evidence only; native behavior was established by PR #60's
+platform jobs. Post-merge master CI and CodeQL were both green on 2026-10-26
+(runs `40351736761` and `40351736678`); those results describe the base commit,
+not this follow-up candidate.
