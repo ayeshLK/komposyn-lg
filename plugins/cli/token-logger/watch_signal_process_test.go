@@ -87,6 +87,7 @@ func assertSignalStopsForegroundWatch(t *testing.T, signal os.Signal) {
 	stdoutPath := filepath.Join(dir, "stdout")
 	stderrPath := filepath.Join(dir, "stderr")
 	command := exec.Command(os.Args[0], "-test.run=^TestIssue56SignalWatchProcessHelper$")
+	prepareSignalTestCommand(command)
 	command.Env = environmentWith(
 		issue56SignalHelperEnv+"=1",
 		issue56SignalReadyEnv+"="+ready,
@@ -123,7 +124,7 @@ func assertSignalStopsForegroundWatch(t *testing.T, signal os.Signal) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if err := command.Process.Signal(signal); err != nil {
+	if err := sendSignalTestCommand(command, signal); err != nil {
 		t.Fatalf("send %v to foreground child: %v", signal, err)
 	}
 	done := make(chan error, 1)

@@ -7,9 +7,16 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"syscall"
 	"testing"
 )
+
+func prepareSignalTestCommand(*exec.Cmd) {}
+
+func sendSignalTestCommand(command *exec.Cmd, signal os.Signal) error {
+	return command.Process.Signal(signal)
+}
 
 func TestProductionWatchDispatchStopsOnInterruptAndTerminate(t *testing.T) {
 	for _, signal := range []os.Signal{os.Interrupt, syscall.SIGTERM} {
