@@ -8,11 +8,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -259,6 +261,121 @@ func TestLogRepeatSuppressionAndValidJSONL(t *testing.T) {
 	loggedAt, err := time.Parse(time.RFC3339Nano, records[0]["time"].(string))
 	if err != nil || loggedAt.Location() != time.UTC {
 		t.Fatalf("timestamp is not valid UTC: %v, %v", records[0]["time"], err)
+	}
+}
+
+func newUnstartedEventLogger(t *testing.T) *eventLogger {
+	t.Helper()
+	sink, err := newJSONLLogSink(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	logger := &eventLogger{
+		sink: sink, cliVersion: "1.2.3", coreVersion: "0.9.0", pid: os.Getpid(),
+		runID: "00112233445566778899aabbccddeeff", encodeBuffer: bytes.Buffer{},
+		suppressed: make(map[logKey]uint64), last: make(map[logKey]time.Time),
+	}
+	logger.encoder = newLogEncoder(&logger.encodeBuffer)
+	return logger
+}
+
+func TestFailedSuppressionSummaryWriteRetainsCountsForRecovery(t *testing.T) {
+	logger := newUnstartedEventLogger(t)
+	counts := map[logKey]uint64{
+		{event: appLogCollectorFailed, code: appLogCodeCollectorPoll, command: appCommandWatch}:    100,
+		{event: appLogCollectorFailed, code: appLogCodeCollectorStore, command: appCommandWatch}:   2500,
+		{event: appLogCommandFailed, code: appLogCodeSettingsLoad, command: appCommandInteractive}: 17,
+	}
+	for key, count := range counts {
+		logger.suppressed[key] = count
+	}
+	logger.sink.writeFile = func(_ *os.File, _ []byte) (int, error) {
+		return 0, errors.New("synthetic zero-byte write failure")
+	}
+	logger.flushSummaries()
+	if len(logger.suppressed) != len(counts) {
+		t.Fatalf("zero-byte failure lost suppression keys: got %d, want %d", len(logger.suppressed), len(counts))
+	}
+	for key, want := range counts {
+		if got := logger.suppressed[key]; got != want {
+			t.Errorf("suppression count for %+v after failure = %d, want %d", key, got, want)
+		}
+	}
+	logger.sink.writeFile = nil
+	logger.flushSummaries()
+	assertSuppressionRecords(t, logger.sink.active, counts)
+}
+
+func TestPartialSummaryBatchRetriesOnlyUnwrittenSuffix(t *testing.T) {
+	logger := newUnstartedEventLogger(t)
+	counts := map[logKey]uint64{
+		{event: appLogCollectorFailed, code: appLogCodeCollectorPoll, command: appCommandWatch}:    101,
+		{event: appLogCollectorFailed, code: appLogCodeCollectorStore, command: appCommandWatch}:   202,
+		{event: appLogCommandFailed, code: appLogCodeSettingsLoad, command: appCommandInteractive}: 303,
+	}
+	for key, count := range counts {
+		logger.suppressed[key] = count
+	}
+	calls := 0
+	logger.sink.writeFile = func(file *os.File, line []byte) (int, error) {
+		calls++
+		if calls == 2 {
+			n, err := file.Write(line[:len(line)/2])
+			if err != nil {
+				return n, err
+			}
+			return n, errors.New("synthetic partial write failure")
+		}
+		return file.Write(line)
+	}
+	logger.flushSummaries()
+	if calls != 2 {
+		t.Fatalf("failure injection reached %d writes, want failure on second", calls)
+	}
+	if len(logger.suppressed) != len(counts)-1 {
+		t.Fatalf("partial batch retained %d summaries, want only unwritten suffix of %d", len(logger.suppressed), len(counts)-1)
+	}
+	contents, err := os.ReadFile(logger.sink.active)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstBatch := decodeLogLines(t, contents)
+	if len(firstBatch) != 1 || firstBatch[0]["msg"] != appLogEventsSuppressed.String() {
+		t.Fatalf("partial batch committed unexpected records: %#v", firstBatch)
+	}
+	logger.sink.writeFile = nil
+	logger.flushSummaries()
+	assertSuppressionRecords(t, logger.sink.active, counts)
+}
+
+func assertSuppressionRecords(t *testing.T, path string, want map[logKey]uint64) {
+	t.Helper()
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := decodeLogLines(t, contents)
+	if len(records) != len(want) {
+		t.Fatalf("suppression records = %d, want %d: %#v", len(records), len(want), records)
+	}
+	type recordKey struct {
+		code    string
+		command string
+	}
+	wantRecords := make(map[recordKey]uint64, len(want))
+	for key, count := range want {
+		wantRecords[recordKey{code: key.code.String(), command: key.command.String()}] = count
+	}
+	got := make(map[recordKey]uint64, len(records))
+	for _, record := range records {
+		if record["msg"] != appLogEventsSuppressed.String() {
+			t.Fatalf("unexpected summary record: %#v", record)
+		}
+		key := recordKey{code: record["code"].(string), command: record["command"].(string)}
+		got[key] = uint64(record["count"].(float64))
+	}
+	if !reflect.DeepEqual(got, wantRecords) {
+		t.Fatalf("recovered suppression counts = %#v, want %#v", got, wantRecords)
 	}
 }
 

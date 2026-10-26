@@ -21,8 +21,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	tokenlogger "github.com/ayeshLK/komposyn/plugins/library/token-logger"
@@ -40,7 +42,9 @@ func runWatchWithContext(args []string, stdout, stderr io.Writer, ctx context.Co
 }
 
 func runWatchWithLogger(args []string, stdout, stderr io.Writer, logger applicationLog) int {
-	return runWatchWithContextAndLogger(args, stdout, stderr, context.Background(), logger)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return runWatchWithContextAndLogger(args, stdout, stderr, ctx, logger)
 }
 
 func runWatchWithContextAndLogger(args []string, stdout, stderr io.Writer, ctx context.Context, logger applicationLog) int {

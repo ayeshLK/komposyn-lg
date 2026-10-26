@@ -480,7 +480,13 @@ func (logger *eventLogger) flushSummaries() {
 	logger.suppressed = make(map[logKey]uint64, 16)
 	logger.mu.Unlock()
 	lines := make([][]byte, 0, len(suppressed)+1)
+	type summary struct {
+		key   logKey
+		count uint64
+	}
+	summaries := make([]summary, 0, len(suppressed))
 	for key, count := range suppressed {
+		summaries = append(summaries, summary{key: key, count: count})
 		lines = append(lines, logger.encode(appLogEventsSuppressed, key.code, key.command, 0, count))
 	}
 	dropped := logger.dropped.Swap(0)
@@ -490,9 +496,37 @@ func (logger *eventLogger) flushSummaries() {
 	if len(lines) > 0 {
 		if err := logger.sink.appendBatch(lines); err != nil {
 			logger.sinkFailed.Store(true)
-			logger.dropped.Add(dropped + uint64(len(suppressed)))
+			failure := batchAppendProgress(err)
+			firstRetry := failure.completed
+			if failure.uncertain {
+				// The failed line may be present in full despite its write error.
+				// Do not replay it; account for its represented observations as
+				// dropped evidence, then retry only later, definitely unwritten lines.
+				if firstRetry < len(summaries) {
+					logger.dropped.Add(summaries[firstRetry].count)
+				} else if dropped > 0 && firstRetry == len(summaries) {
+					logger.dropped.Add(dropped)
+				}
+				firstRetry++
+			}
+			logger.mu.Lock()
+			for index := firstRetry; index < len(summaries); index++ {
+				key, count := summaries[index].key, summaries[index].count
+				logger.suppressed[key] = saturatingAdd(logger.suppressed[key], count)
+			}
+			logger.mu.Unlock()
+			if dropped > 0 && firstRetry <= len(summaries) {
+				logger.dropped.Add(dropped)
+			}
 		}
 	}
+}
+
+func saturatingAdd(left, right uint64) uint64 {
+	if ^uint64(0)-left < right {
+		return ^uint64(0)
+	}
+	return left + right
 }
 
 func (logger *eventLogger) Unavailable() bool {
@@ -531,6 +565,23 @@ type jsonlLogSink struct {
 	writeFile func(*os.File, []byte) (int, error)
 }
 
+type jsonlBatchWriteError struct {
+	cause     error
+	completed int
+	uncertain bool
+}
+
+func (failure *jsonlBatchWriteError) Error() string { return failure.cause.Error() }
+func (failure *jsonlBatchWriteError) Unwrap() error { return failure.cause }
+
+func batchAppendProgress(err error) jsonlBatchWriteError {
+	var failure *jsonlBatchWriteError
+	if errors.As(err, &failure) {
+		return *failure
+	}
+	return jsonlBatchWriteError{cause: err, completed: 0}
+}
+
 func newJSONLLogSink(dir string) (*jsonlLogSink, error) {
 	if dir == "" {
 		return nil, errors.New("empty log directory")
@@ -553,7 +604,9 @@ func (sink *jsonlLogSink) appendBatch(lines [][]byte) error {
 			return errors.New("invalid bounded log record")
 		}
 	}
-	return sink.withLock(func() error {
+	completed := 0
+	uncertain := false
+	err := sink.withLock(func() error {
 		if err := secureLogDirectory(sink.dir); err != nil {
 			return err
 		}
@@ -615,20 +668,28 @@ func (sink *jsonlLogSink) appendBatch(lines [][]byte) error {
 			}
 			n, writeErr := write(active, line)
 			if writeErr != nil || n != len(line) {
-				_ = active.Truncate(size)
+				truncateErr := active.Truncate(size)
 				_ = active.Close()
 				active = nil
-				if writeErr != nil {
-					return writeErr
+				if truncateErr != nil {
+					uncertain = true
 				}
-				return io.ErrShortWrite
+				if writeErr != nil {
+					return errors.Join(writeErr, truncateErr)
+				}
+				return errors.Join(io.ErrShortWrite, truncateErr)
 			}
 			size += int64(n)
+			completed++
 		}
 		closeErr := active.Close()
 		active = nil
 		return closeErr
 	})
+	if err != nil {
+		return &jsonlBatchWriteError{cause: err, completed: completed, uncertain: uncertain}
+	}
+	return nil
 }
 
 func (sink *jsonlLogSink) withLock(fn func() error) error {
