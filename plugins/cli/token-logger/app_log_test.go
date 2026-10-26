@@ -17,6 +17,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -348,6 +349,120 @@ func TestPartialSummaryBatchRetriesOnlyUnwrittenSuffix(t *testing.T) {
 	assertSuppressionRecords(t, logger.sink.active, counts)
 }
 
+func TestFailedTruncationAccountsUncertainSummaryWithoutReplayingPrefix(t *testing.T) {
+	logger := newUnstartedEventLogger(t)
+	counts := map[logKey]uint64{
+		{event: appLogCollectorFailed, code: appLogCodeCollectorPoll, command: appCommandWatch}:    101,
+		{event: appLogCollectorFailed, code: appLogCodeCollectorStore, command: appCommandWatch}:   202,
+		{event: appLogCommandFailed, code: appLogCodeSettingsLoad, command: appCommandInteractive}: 303,
+	}
+	for key, count := range counts {
+		logger.suppressed[key] = count
+	}
+	calls := 0
+	logger.sink.writeFile = func(file *os.File, line []byte) (int, error) {
+		calls++
+		if calls == 2 {
+			n, err := file.Write(line[:len(line)/2])
+			if err != nil {
+				return n, err
+			}
+			return n, errors.New("synthetic partial summary write")
+		}
+		return file.Write(line)
+	}
+	logger.sink.truncateFile = func(*os.File, int64) error {
+		return errors.New("synthetic truncation failure")
+	}
+	logger.flushSummaries()
+	if calls != 2 || len(logger.suppressed) != 1 {
+		t.Fatalf("uncertain summary outcome: writes=%d pending=%v", calls, logger.suppressed)
+	}
+	contents, err := os.ReadFile(logger.sink.active)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstLine, _, foundLine := bytes.Cut(contents, []byte("\n"))
+	if !foundLine {
+		t.Fatalf("known successful prefix was not written: %q", contents)
+	}
+	firstRecord := decodeLogLines(t, append(firstLine, '\n'))[0]
+	prefixKey := recordKeyFromLog(firstRecord)
+	remainingKey := firstLogKey(logger.suppressed)
+	uncertainKey := logKey{}
+	for key := range counts {
+		if (key.code.String() == prefixKey.code && key.command.String() == prefixKey.command) || key == remainingKey {
+			continue
+		}
+		uncertainKey = key
+	}
+	if logger.dropped.Load() != counts[uncertainKey] {
+		t.Fatalf("uncertain summary lost-evidence count=%d, want %d for %+v", logger.dropped.Load(), counts[uncertainKey], uncertainKey)
+	}
+	logger.sink.writeFile = nil
+	logger.sink.truncateFile = nil
+	logger.flushSummaries()
+	contents, err = os.ReadFile(logger.sink.active)
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := decodeLogLines(t, contents)
+	if len(records) != 3 {
+		t.Fatalf("recovered uncertain batch has %d records, want prefix, suffix, dropped summary: %#v", len(records), records)
+	}
+	suppressed := make(map[recordKey]uint64)
+	droppedCount := uint64(0)
+	for _, record := range records {
+		switch record["msg"] {
+		case appLogEventsSuppressed.String():
+			suppressed[recordKeyFromLog(record)] = uint64(record["count"].(float64))
+		case appLogEventsDropped.String():
+			droppedCount = uint64(record["count"].(float64))
+		default:
+			t.Fatalf("unexpected recovered record: %#v", record)
+		}
+	}
+	wantSuppressed := map[recordKey]uint64{
+		prefixKey:                      counts[findLogKey(counts, prefixKey)],
+		recordKeyFromKey(remainingKey): counts[remainingKey],
+	}
+	if !reflect.DeepEqual(suppressed, wantSuppressed) || droppedCount != counts[uncertainKey] {
+		t.Fatalf("recovered suppression=%v dropped=%d, want suppression=%v dropped=%d", suppressed, droppedCount, wantSuppressed, counts[uncertainKey])
+	}
+	if logger.dropped.Load() != 0 {
+		t.Fatalf("successfully written dropped summary left pending count %d", logger.dropped.Load())
+	}
+}
+
+type recordKey struct {
+	code    string
+	command string
+}
+
+func recordKeyFromLog(record map[string]any) recordKey {
+	return recordKey{code: record["code"].(string), command: record["command"].(string)}
+}
+
+func recordKeyFromKey(key logKey) recordKey {
+	return recordKey{code: key.code.String(), command: key.command.String()}
+}
+
+func firstLogKey(values map[logKey]uint64) logKey {
+	for key := range values {
+		return key
+	}
+	return logKey{}
+}
+
+func findLogKey(values map[logKey]uint64, wanted recordKey) logKey {
+	for key := range values {
+		if recordKeyFromKey(key) == wanted {
+			return key
+		}
+	}
+	return logKey{}
+}
+
 func assertSuppressionRecords(t *testing.T, path string, want map[logKey]uint64) {
 	t.Helper()
 	contents, err := os.ReadFile(path)
@@ -471,6 +586,149 @@ func TestLogRotationBoundsRecoveryAndTornTail(t *testing.T) {
 	decodeLogLines(t, active)
 }
 
+func TestRotationFailuresPreserveRecordsAndRecoverGaps(t *testing.T) {
+	tests := []struct {
+		name            string
+		fail            func(*testing.T, *jsonlLogSink)
+		wantAfter       map[string]int
+		wantAfterAppend map[string]int
+	}{
+		{
+			name: "oldest archive removal failure",
+			fail: func(t *testing.T, sink *jsonlLogSink) {
+				sink.removeFile = func(path string) error {
+					if path == sink.archivePath(3) {
+						return errors.New("injected archive removal failure")
+					}
+					return removeLogFile(path)
+				}
+			},
+			wantAfter:       map[string]int{"active": 1, "one": 1, "two": 1, "three": 1},
+			wantAfterAppend: map[string]int{"active": 1, "new": 1, "one": 1, "two": 1, "three": 1},
+		},
+		{
+			name: "middle archive rename failure",
+			fail: func(t *testing.T, sink *jsonlLogSink) {
+				sink.renameFile = func(source, target string) error {
+					if source == sink.archivePath(1) && target == sink.archivePath(2) {
+						return errors.New("injected middle archive rename failure")
+					}
+					return renameLogFile(source, target)
+				}
+			},
+			wantAfter:       map[string]int{"active": 1, "one": 1, "two": 1},
+			wantAfterAppend: map[string]int{"active": 1, "new": 1, "one": 1, "two": 1},
+		},
+		{
+			name: "active archive rename failure",
+			fail: func(t *testing.T, sink *jsonlLogSink) {
+				sink.renameFile = func(source, target string) error {
+					if source == sink.active && target == sink.archivePath(1) {
+						return errors.New("injected active rename failure")
+					}
+					return renameLogFile(source, target)
+				}
+			},
+			wantAfter:       map[string]int{"active": 1, "one": 1, "two": 1},
+			wantAfterAppend: map[string]int{"active": 1, "new": 1, "one": 1, "two": 1},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			sink, unrelated := seedRotationFiles(t)
+			test.fail(t, sink)
+			if err := sink.rotate(); err == nil {
+				t.Fatal("injected rotation failure succeeded")
+			}
+			assertRotationMarkers(t, sink, test.wantAfter, unrelated)
+			sink.renameFile = nil
+			sink.removeFile = nil
+			line := []byte("{\"format_version\":1,\"marker\":\"new\"}\n")
+			if err := sink.appendBatch([][]byte{line}); err != nil {
+				t.Fatalf("append after interrupted rotation: %v", err)
+			}
+			assertRotationMarkers(t, sink, test.wantAfterAppend, unrelated)
+			assertActiveRotationMarkers(t, sink, map[string]int{"active": 1, "new": 1})
+			for range 3 {
+				if err := sink.appendBatch([][]byte{line}); err != nil {
+					t.Fatalf("repeat append after interrupted rotation: %v", err)
+				}
+			}
+			assertActiveRotationMarkers(t, sink, map[string]int{"active": 1, "new": 4})
+			assertBoundedLogFiles(t, sink)
+		})
+	}
+}
+
+func seedRotationFiles(t *testing.T) (*jsonlLogSink, string) {
+	t.Helper()
+	dir := t.TempDir()
+	sink, err := newJSONLLogSink(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink.maxFile = 4096
+	markers := map[string]string{"active": "active", "archive1": "one", "archive2": "two", "archive3": "three"}
+	paths := map[string]string{
+		"active": sink.active, "archive1": sink.archivePath(1),
+		"archive2": sink.archivePath(2), "archive3": sink.archivePath(3),
+	}
+	for name, marker := range markers {
+		line := []byte(fmt.Sprintf("{\"format_version\":1,\"marker\":%q}\n", marker))
+		if err := os.WriteFile(paths[name], line, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	unrelated := filepath.Join(dir, "notes.txt")
+	if err := os.WriteFile(unrelated, []byte("preserve this file"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return sink, unrelated
+}
+
+func assertRotationMarkers(t *testing.T, sink *jsonlLogSink, want map[string]int, unrelated string) {
+	t.Helper()
+	paths := map[string]string{
+		"active": sink.active, "archive1": sink.archivePath(1),
+		"archive2": sink.archivePath(2), "archive3": sink.archivePath(3),
+	}
+	got := make(map[string]int)
+	for _, path := range paths {
+		contents, err := os.ReadFile(path)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, record := range decodeLogLines(t, contents) {
+			marker := record["marker"].(string)
+			got[marker]++
+		}
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("rotation markers = %v, want %v", got, want)
+	}
+	if contents, err := os.ReadFile(unrelated); err != nil || string(contents) != "preserve this file" {
+		t.Errorf("unrelated file changed: %q err=%v", contents, err)
+	}
+}
+
+func assertActiveRotationMarkers(t *testing.T, sink *jsonlLogSink, want map[string]int) {
+	t.Helper()
+	contents, err := os.ReadFile(sink.active)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make(map[string]int)
+	for _, record := range decodeLogLines(t, contents) {
+		got[record["marker"].(string)]++
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("active log markers after interrupted rotation = %v, want %v", got, want)
+	}
+}
+
 func TestLogWriteFailureIsBoundedAndNextAppendRepairsTornTail(t *testing.T) {
 	sink, err := newJSONLLogSink(t.TempDir())
 	if err != nil {
@@ -542,6 +800,209 @@ func TestLogLockWaitAndShutdownStayWithinBudgets(t *testing.T) {
 	close(release)
 	if err := <-lockDone; err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestProductionEventLoggerPressureRecoveryAndClose(t *testing.T) {
+	logger, err := newEventLogger(t.TempDir(), "1.2.3", "0.9.0", os.Getpid(), "00112233445566778899aabbccddeeff")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	logger.sink.writeFile = func(file *os.File, line []byte) (int, error) {
+		once.Do(func() {
+			close(entered)
+			<-release
+		})
+		return file.Write(line)
+	}
+	logger.Event(appLogProcessStarted, appLogCodeNone, appCommandOther, 0)
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("production logger did not enter the controlled blocked write")
+	}
+	errorKey := logKey{event: appLogCollectorFailed, code: appLogCodeCollectorPoll, command: appCommandWatch}
+	logger.Event(errorKey.event, errorKey.code, errorKey.command, 2)
+	const repeatCount = 900
+	for range repeatCount {
+		logger.Event(errorKey.event, errorKey.code, errorKey.command, 2)
+	}
+	for event := appLogProcessStarted; event <= appLogCollectorFailed && len(logger.queue) < cap(logger.queue); event++ {
+		for code := appLogCodeNone; code <= appLogCodeLogWrite && len(logger.queue) < cap(logger.queue); code++ {
+			for command := appCommandInteractive; command <= appCommandOther && len(logger.queue) < cap(logger.queue); command++ {
+				key := logKey{event: event, code: code, command: command}
+				if key == errorKey {
+					continue
+				}
+				logger.mu.Lock()
+				if _, exists := logger.last[key]; !exists && len(logger.last) >= maxLogKeyState-1 {
+					logger.last[overflowLogKey] = time.Time{}
+				} else {
+					logger.last[key] = time.Time{}
+				}
+				logger.mu.Unlock()
+				logger.Event(event, code, command, 1)
+			}
+		}
+	}
+	if got := len(logger.queue); got != cap(logger.queue) {
+		t.Fatalf("production queue filled to %d, want bound %d", got, cap(logger.queue))
+	}
+	if len(logger.last) > maxLogKeyState || len(logger.suppressed) > maxLogKeyState {
+		t.Fatalf("production logger state exceeded bounds: last=%d suppressed=%d", len(logger.last), len(logger.suppressed))
+	}
+	const droppedAttempts = 20
+	publicationDone := make(chan struct{})
+	go func() {
+		for range droppedAttempts {
+			logger.mu.Lock()
+			logger.last[overflowLogKey] = time.Time{}
+			logger.mu.Unlock()
+			logger.Event(appLogEventsDropped, appLogCodeNone, appCommandOther, 0)
+		}
+		close(publicationDone)
+	}()
+	select {
+	case <-publicationDone:
+	case <-time.After(time.Second):
+		close(release)
+		t.Fatal("publisher waited for queue capacity while the file writer was blocked")
+	}
+	if got := logger.dropped.Load(); got != droppedAttempts {
+		close(release)
+		t.Fatalf("drop accounting before recovery=%d, want %d", got, droppedAttempts)
+	}
+	close(release)
+	closeStart := time.Now()
+	logger.Close()
+	if elapsed := time.Since(closeStart); elapsed > logCloseBudget+100*time.Millisecond {
+		t.Fatalf("production logger close took %s, budget %s", elapsed, logCloseBudget)
+	}
+	logger.Close()
+	logger.Event(appLogProcessStarted, appLogCodeNone, appCommandOther, 0)
+	select {
+	case <-logger.done:
+	default:
+		t.Fatal("worker did not exit after pressure was released and Close returned")
+	}
+	if len(logger.queue) != 0 {
+		t.Fatalf("queue retained %d events after successful drain", len(logger.queue))
+	}
+	contents, err := os.ReadFile(logger.sink.active)
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := decodeLogLines(t, contents)
+	var written, suppressed, dropped uint64
+	for _, record := range records {
+		switch record["msg"] {
+		case appLogEventsSuppressed.String():
+			suppressed += uint64(record["count"].(float64))
+		case appLogEventsDropped.String():
+			dropped += uint64(record["count"].(float64))
+		default:
+			written++
+		}
+	}
+	if written != uint64(cap(logger.queue)+1) || suppressed < repeatCount || dropped != droppedAttempts {
+		t.Fatalf("pressure evidence: written=%d suppressed=%d dropped=%d", written, suppressed, dropped)
+	}
+	beforeDrop := logger.dropped.Load()
+	beforeQueue := len(logger.queue)
+	logger.Event(appLogProcessStarted, appLogCodeNone, appCommandOther, 0)
+	if logger.dropped.Load() != beforeDrop || len(logger.queue) != beforeQueue {
+		t.Fatal("publication after Close changed logger state")
+	}
+}
+
+func TestProductionEventLoggerCloseBudgetDoesNotCancelBlockedFilesystemWork(t *testing.T) {
+	logger, err := newEventLogger(t.TempDir(), "1.2.3", "0.9.0", os.Getpid(), "00112233445566778899aabbccddeeff")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entered, release := make(chan struct{}), make(chan struct{})
+	logger.sink.writeFile = func(file *os.File, line []byte) (int, error) {
+		close(entered)
+		<-release
+		return file.Write(line)
+	}
+	logger.Event(appLogProcessStarted, appLogCodeNone, appCommandOther, 0)
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("writer did not enter the controlled blocked filesystem operation")
+	}
+	started := time.Now()
+	logger.Close()
+	if elapsed := time.Since(started); elapsed > logCloseBudget+100*time.Millisecond {
+		close(release)
+		t.Fatalf("Close exceeded its wait budget: %s", elapsed)
+	}
+	select {
+	case <-logger.done:
+		close(release)
+		t.Fatal("logger claimed its worker was cancelled while the filesystem hook remained blocked")
+	default:
+	}
+	logger.Close()
+	close(release)
+	select {
+	case <-logger.done:
+	case <-time.After(time.Second):
+		t.Fatal("worker did not exit after blocked filesystem operation was released")
+	}
+}
+
+func TestProductionEventLoggerPublishersRaceNormalClose(t *testing.T) {
+	logger, err := newEventLogger(t.TempDir(), "1.2.3", "0.9.0", os.Getpid(), "00112233445566778899aabbccddeeff")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const publishers = 8
+	start := make(chan struct{})
+	var ready, workers sync.WaitGroup
+	ready.Add(publishers)
+	workers.Add(publishers)
+	for index := range publishers {
+		go func(index int) {
+			defer workers.Done()
+			ready.Done()
+			<-start
+			for attempt := 0; attempt < 500; attempt++ {
+				event := appLogEvent(1 + (attempt+index)%int(appLogEventsDropped))
+				code := appLogCode((attempt + index) % int(appLogCodeLogWrite+1))
+				command := appCommand(1 + (attempt+index)%int(appCommandOther))
+				logger.Event(event, code, command, attempt%3)
+			}
+		}(index)
+	}
+	ready.Wait()
+	closeDone := make(chan struct{})
+	go func() {
+		<-start
+		logger.Close()
+		close(closeDone)
+	}()
+	close(start)
+	workers.Wait()
+	select {
+	case <-closeDone:
+	case <-time.After(2 * logCloseBudget):
+		t.Fatal("normal Close did not finish after racing publishers")
+	}
+	logger.Close()
+	select {
+	case <-logger.done:
+	case <-time.After(time.Second):
+		t.Fatal("logger worker leaked after publisher/Close race")
+	}
+	if len(logger.queue) != 0 {
+		t.Fatalf("publisher/Close race left %d queued events", len(logger.queue))
+	}
+	if len(logger.last) > maxLogKeyState || len(logger.suppressed) > maxLogKeyState {
+		t.Fatalf("publisher/Close race exceeded bounded state: last=%d suppressed=%d", len(logger.last), len(logger.suppressed))
 	}
 }
 

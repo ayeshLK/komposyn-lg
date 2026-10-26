@@ -1,8 +1,9 @@
 # Issue #56 local logging evidence
 
-This note records a small synthetic resource check of the bounded local JSONL
-logger. It is implementation evidence for the CLI changes in issue #56; it is
-not a workload benchmark or a release-readiness claim.
+This note gathers synthetic implementation and resource evidence for the
+bounded local JSONL logger, including the production collector comparison
+added for issue #56. It is not a release-readiness claim or a benchmark of
+customer workloads.
 
 ## Reproduction
 
@@ -197,3 +198,127 @@ replace the native multiprocess file tests, and does not claim the channel is
 faster for every workload. If event volume or producer topology changes,
 repeat this comparison with representative traffic before reconsidering the
 queue.
+
+## Production collector resource comparison
+
+The opt-in Linux harness
+[`app_log_resource_linux_test.go`](../plugins/cli/token-logger/app_log_resource_linux_test.go)
+compares the production foreground collector with its production `eventLogger`
+enabled and with `discardApplicationLog`. It runs each sample in a separate
+test-binary process, serially. Each of three repetitions covers both workloads
+with logging on and off; the mode order alternates between repetitions.
+
+Reproduce from the repository root. Results and all generated fixtures remain
+outside the repository:
+
+```sh
+ISSUE56_RESOURCE_EVIDENCE=1 \
+ISSUE56_RESOURCE_OUTPUT=/tmp/issue56-resource-results.json \
+go test ./plugins/cli/token-logger \
+  -run '^TestIssue56ProductionLoggerResourceComparison$' -count=1 -v -timeout=15m
+```
+
+The harness and logger changes are CLI commit
+`b64d45e5cfffc6f4bb28d8aab40a98d5bf410164`, based on merged master
+`e771dc0448b0f256b29db091d3a911f8df5f5e82`. The harness SHA-256 is
+`f61378eabf90e8ed545419a36ac894b19925d43d1203e2c0804254c20063ec26`. It uses
+Go `1.26.9 linux/amd64`, default `go test` build flags,
+`CGO_ENABLED=1`, no `GOFLAGS`, and the repository's pinned core `v0.9.0`.
+The test binary has the source default CLI version `0.0.0-dev`; it uses
+`tokenlogger.CoreVersion()` for core metadata. The event logger writes only
+inside the synthetic per-sample data directory.
+The source template is
+`plugins/library/token-logger/testdata/codex/normal.jsonl`, SHA-256
+`63342f9fd2dc6345bac2610c334f0c214fb0bd8294addd63b6a2136d4c346cf2`. Before
+the timed runs, the harness creates 96 independent synthetic Codex files by
+replacing the template session ID, project ID, and token-count IDs with
+numbered synthetic values. Both logger modes use the same files. The collector
+polls every 100 ms; the harness waits for the initial import to finish, warms
+for 3 seconds, then measures for 30 seconds. Each ordinary sample imports 192
+usage records, then scans the unchanged sources during the measurement window.
+
+The second workload points at the same 96 distinct, deliberately absent
+synthetic paths in every mode. It exercises recurring source-poll failures and
+the logger's suppression summaries. It imports no records. Both scenarios run
+with disposable databases and log directories below the test's temporary
+directory. No provider files, user home, or normal application data are read
+or changed. Collection shutdown and logger shutdown are measured after the
+30-second window. The test fails if ordinary collection emits errors or
+suppression, if accounting differs from the fixture's 192 records, or if the
+failure workload produces no suppression summary.
+
+Measurements are process CPU seconds, RSS sampled every 100 ms, process HWM on
+the per-sample child, Linux `/proc/self/io` counter deltas, Go total allocation
+delta, and `HeapAlloc` at the end of the measurement window. `HeapAlloc` is not
+a post-GC retained-heap measurement. The I/O values are per-process kernel
+counters, not log-file bytes or a complete measure of physical device traffic.
+Poll latency is unavailable from the current collector interface. Log volume
+is the logical size of active and rotated log files after orderly shutdown.
+
+Host: Linux `7.0.0-38-generic`, x86_64, Intel Core i7-10510U with 8 logical
+CPUs, 15.4 GiB installed RAM, `/tmp` on the root ext4 filesystem, and the
+`powersave` governor. Load averages after the matrix were 0.90, 0.90, 1.44.
+Runs were serialized without another benchmark. Results are ranges over three
+samples per mode. RSS shows each process's starting RSS through its peak 100 ms
+sample. HWM is process lifetime HWM at the end of the measurement. MiB is
+1,048,576 bytes.
+
+| Workload | Logging | CPU seconds / 30s | Sampled RSS start–peak (MiB) | HWM (MiB) | Go allocations (MiB) | End `HeapAlloc` (MiB) | `/proc/self/io` read / write (MiB) | Log bytes | Suppressed / dropped | Collector shutdown | Logger shutdown |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Ordinary, 96 Codex files | On | 11.21–11.75 | 22.03–23.42 | 22.84–23.46 | 1,812–1,866 | 1.32–2.43 | 0 / 5.89–6.05 | 512 | 0 / 0 | 2.24–5.86 ms | 0.020–0.050 ms |
+| Ordinary, 96 Codex files | Off | 11.06–12.80 | 21.84–23.21 | 22.41–23.17 | 1,700–1,876 | 0.68–2.60 | 0 / 5.55–6.07 | 0 | 0 / 0 | 3.08–3.78 ms | n/a |
+| 96 missing-source failures | On | 3.62–3.96 | 18.91–22.62 | 21.44–22.22 | 80.04–94.32 | 2.62–3.70 | 0 / 106.92–126.71 | 16.83–18.57 KiB | 72–88 / 0 | 1.95–44.23 ms | 0.140–0.230 ms |
+| 96 missing-source failures | Off | 3.25–4.02 | 18.79–22.50 | 21.12–21.95 | 74.40–92.89 | 3.03–4.21 | 0 / 99.32–126.31 | 0 | 0 / 0 | 2.03–92.22 ms | n/a |
+
+The ordinary CPU, sampled RSS, HWM, allocation, and I/O ranges overlap. Paired
+ordinary CPU differences (logging on minus off) were `+0.03`, `+0.23`, and
+`-1.05` seconds. Paired allocation differences were `-0.12`, `-10.40`, and
+`+111.80` MiB, showing substantial run-to-run variability. The failure
+workload ranges also overlap; paired CPU differences were `+0.70`, `-0.06`,
+and `-0.26` seconds, with allocation and write-counter differences changing
+direction across pairs. Its suppression summaries represented 72–88 suppressed
+events, with no drops. These samples do not establish a consistent resource
+regression or improvement. All ordinary runs imported the expected 192
+records. Poll latency was not separately measured because the current
+collector interface does not expose a poll-duration measurement.
+
+Raw results are at `/tmp/issue56-resource-results-final.json` on the measurement
+host and are not committed. Native macOS and Windows runtime evidence still
+depends on their native CI runners; Linux results do not predict those
+platforms.
+
+## Remaining issue #56 acceptance audit
+
+| Acceptance item | Evidence |
+|---|---|
+| Rotation remove/rename failures preserve valid records and unrelated files; archives remain bounded | `TestRotationFailuresPreserveRecordsAndRecoverGaps` in `app_log_test.go` |
+| Failed write plus failed truncation records uncertainty, does not replay a completed prefix, and recovers suppression/drop evidence | `TestFailedTruncationAccountsUncertainSummaryWithoutReplayingPrefix` |
+| Actual production event logger queue saturation, suppression/drop summaries, recovery, repeated/concurrent Close, and post-Close publication | `TestProductionEventLoggerPressureRecoveryAndClose` and `TestProductionEventLoggerPublishersRaceNormalClose` |
+| Close wait budget does not claim to cancel blocked filesystem work; release then joins worker | `TestProductionEventLoggerCloseBudgetDoesNotCancelBlockedFilesystemWork` |
+| Effective protected current-user ACL on directory, active file, stable lock, and rotated archive | `TestPrivateWindowsLogDirectoryAndFiles`; passed on native Windows x64 and ARM in PR #60 CI |
+| Repeated production collector resource comparison with accounting, CPU, memory, I/O, log volume, suppression/drop, and shutdown | This section and `TestIssue56ProductionLoggerResourceComparison`; native Linux run completed |
+| Native macOS and Windows package/lifecycle behavior, including Windows ACL assertions | Passed in [PR #60 CI](https://github.com/ayeshLK/komposyn-lg/actions/runs/40361655858): macOS, Windows x64, and Windows ARM native tests |
+| Existing six-target published-upgrade jobs | All six passed in [PR #60 CI](https://github.com/ayeshLK/komposyn-lg/actions/runs/40361655858); these are CI checks and do not publish a release |
+| Race, Linux tests, historical fixture artifacts, and CodeQL | Passed in [PR #60 CI](https://github.com/ayeshLK/komposyn-lg/actions/runs/40361655858) and [CodeQL](https://github.com/ayeshLK/komposyn-lg/actions/runs/40361655860) |
+
+### Validation on the follow-up candidate
+
+The following commands passed on Linux at CLI commit
+`b64d45e5cfffc6f4bb28d8aab40a98d5bf410164`:
+
+```text
+go mod verify       all modules verified
+go vet ./...        passed
+go test ./...       passed (token-logger package: 24.8s)
+go test -race ./... passed (token-logger package: 96.3s)
+make check          passed, including installer trust, release provenance,
+                    release-version-flow and executable-copy checks
+git diff --check    passed
+```
+
+Windows test code also compiled locally with
+`GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go test -c -o /tmp/komposyn-lg-issue56-windows.test.exe ./plugins/cli/token-logger`.
+That is compile evidence only; native behavior was established by PR #60's
+platform jobs. Post-merge master CI and CodeQL were both green on 2026-10-26
+(runs `40351736761` and `40351736678`); those results describe the base commit,
+not this follow-up candidate.
