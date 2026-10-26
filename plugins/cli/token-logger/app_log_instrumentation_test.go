@@ -15,6 +15,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -75,6 +76,12 @@ func (logger *recordingApplicationLog) has(event appLogEvent, code appLogCode) b
 		}
 	}
 	return false
+}
+
+func (logger *recordingApplicationLog) summarySnapshot() []recordedSummary {
+	logger.mu.Lock()
+	defer logger.mu.Unlock()
+	return append([]recordedSummary(nil), logger.summaries...)
 }
 
 func TestInteractiveDatabaseOpenFailureIsLoggedBeforeStoreExists(t *testing.T) {
@@ -307,9 +314,48 @@ func TestReportQueryAndRenderFailuresUseDistinctCodes(t *testing.T) {
 	}
 }
 
-type failingWriter struct{}
+func TestInteractiveReportWriterFailureIsLoggedSafely(t *testing.T) {
+	const marker = "PRIVATE_INTERACTIVE_RENDER_SENTINEL"
+	dataDir := t.TempDir()
+	store, err := tokenlogger.Open(filepath.Join(dataDir, "token-logger.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Append([]tokenlogger.UsageEvent{cliReportEvent("interactive-render", time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC))}); err != nil {
+		_ = store.Close()
+		t.Fatal(err)
+	}
+	defer store.Close()
+	logDir := t.TempDir()
+	logger, err := newEventLogger(logDir, "v0.11.0", tokenlogger.CoreVersion(), os.Getpid(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader := &scannerLineReader{scanner: bufio.NewScanner(strings.NewReader("/quit\n")), output: io.Discard}
+	var stderr strings.Builder
+	code := runInteractiveLoopWithClockAndRootsAndLogger(reader, failingWriter{message: marker}, &stderr, store, dataDir, defaultSettings(dataDir), false,
+		func() time.Time { return time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC) }, nil, logger)
+	logger.Close()
+	if code != 0 {
+		t.Fatalf("writer failure changed REPL exit code: %d stderr=%q", code, stderr.String())
+	}
+	contents, err := os.ReadFile(filepath.Join(logDir, "klg.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(contents), `"code":"report_render"`) || strings.Contains(string(contents), `"exit_code"`) || strings.Contains(string(contents), marker) {
+		t.Fatalf("interactive renderer failure was not safely classified: %s", contents)
+	}
+}
 
-func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("PRIVATE_RENDER_ERROR") }
+type failingWriter struct{ message string }
+
+func (writer failingWriter) Write([]byte) (int, error) {
+	if writer.message != "" {
+		return 0, errors.New(writer.message)
+	}
+	return 0, errors.New("PRIVATE_RENDER_ERROR")
+}
 
 func TestDetachedLaunchAndReadinessFailuresAreLogged(t *testing.T) {
 	dataDir := t.TempDir()
@@ -371,6 +417,32 @@ func TestCollectorSummarySeparatesLatestAndCumulativeScopes(t *testing.T) {
 	}
 }
 
+func TestEmbeddedCollectorSummaryOmitsUnmeasuredDuration(t *testing.T) {
+	dataDir := t.TempDir()
+	store, err := tokenlogger.Open(filepath.Join(dataDir, "token-logger.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	logger := &recordingApplicationLog{}
+	runtime, err := startInteractiveCollectorWithLogger(store, nil, 5*time.Second, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for len(logger.summarySnapshot()) == 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	runtime.stop()
+	summaries := logger.summarySnapshot()
+	if len(summaries) == 0 {
+		t.Fatal("embedded collector did not emit its first completed-poll summary")
+	}
+	if summaries[0].durationMS >= 0 {
+		t.Fatalf("embedded collector claimed an unmeasured poll duration: %+v", summaries[0])
+	}
+}
+
 func TestCollectorSummaryEncodingIsBoundedAndOmitsUnknownDuration(t *testing.T) {
 	dir := t.TempDir()
 	logger, err := newEventLogger(dir, "v0.11.0", tokenlogger.CoreVersion(), 4321, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
@@ -413,19 +485,28 @@ func TestUnexpectedDeadlineIsNotSuppressedAsCancellation(t *testing.T) {
 	if expectedCollectorCancellation(cancelled, context.DeadlineExceeded) {
 		t.Fatal("deadline error was hidden by an unrelated context cancellation")
 	}
+	if !expectedCollectorPollCancellation(active, context.Canceled, true) {
+		t.Fatal("cooperative stop cancellation was not recognized")
+	}
+	if expectedCollectorPollCancellation(active, context.Canceled, false) {
+		t.Fatal("cancellation without operation or cooperative-stop evidence was treated as expected")
+	}
+	if expectedCollectorPollCancellation(active, context.DeadlineExceeded, true) {
+		t.Fatal("cooperative stop hid an unrelated poll deadline")
+	}
 }
 
 func TestPollFailureEpisodeLogsOnceUntilRecovery(t *testing.T) {
 	logger := &recordingApplicationLog{}
 	active := false
 	for range 5 {
-		logPollFailureEpisode(logger, appCommandWatch, context.Background(), context.DeadlineExceeded, nil, &active)
+		logPollFailureEpisode(logger, appCommandWatch, context.Background(), context.DeadlineExceeded, nil, false, &active)
 	}
 	if count := len(logger.events); count != 1 || logger.events[0].code != appLogCodeCollectorPoll {
 		t.Fatalf("continuous failure generated %d poll events: %+v", count, logger.events)
 	}
-	logPollFailureEpisode(logger, appCommandWatch, context.Background(), nil, nil, &active)
-	logPollFailureEpisode(logger, appCommandWatch, context.Background(), context.DeadlineExceeded, nil, &active)
+	logPollFailureEpisode(logger, appCommandWatch, context.Background(), nil, nil, false, &active)
+	logPollFailureEpisode(logger, appCommandWatch, context.Background(), context.DeadlineExceeded, nil, false, &active)
 	if count := len(logger.events); count != 2 {
 		t.Fatalf("recovered failure episode was not logged once: %+v", logger.events)
 	}

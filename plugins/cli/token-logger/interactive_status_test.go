@@ -51,11 +51,26 @@ func TestInteractiveStatusTracksLastSuccessfulReportOnly(t *testing.T) {
 		},
 	}
 	var stdout, stderr bytes.Buffer
-	if code := runInteractiveLoopWithClock(reader, &stdout, &stderr, store, dataDir, defaultSettings(dataDir), false, func() time.Time { return current }); code != 0 {
+	logger := &recordingApplicationLog{}
+	if code := runInteractiveLoopWithClockAndRootsAndLogger(reader, &stdout, &stderr, store, dataDir, defaultSettings(dataDir), false, func() time.Time { return current }, nil, logger); code != 0 {
 		t.Fatalf("interactive exit code=%d stderr=%q output=%q", code, stderr.String(), stdout.String())
 	}
 	if !strings.Contains(stderr.String(), "usage query failed") {
 		t.Fatalf("expected synthetic main-report failure, stderr=%q", stderr.String())
+	}
+	if !logger.has(appLogCommandFailed, appLogCodeReportQuery) {
+		t.Fatalf("interactive query failure was not logged: %+v", logger.events)
+	}
+	logger.mu.Lock()
+	for _, event := range logger.events {
+		if event.event == appLogCommandFailed && event.code == appLogCodeReportQuery && event.exit != appLogOperationExitCodeUnset {
+			logger.mu.Unlock()
+			t.Fatalf("REPL operation failure claimed a process exit code: %+v", event)
+		}
+	}
+	logger.mu.Unlock()
+	if strings.Contains(stdout.String(), "Sanitized diagnostic saved locally") {
+		t.Fatalf("closed store unexpectedly persisted a diagnostic: %q", stdout.String())
 	}
 
 	blocks := interactiveLastReportBlocks(stdout.String())

@@ -740,10 +740,10 @@ func runForegroundWatchWithLogger(args []string, stdout, stderr io.Writer, ctx c
 			return 2
 		}
 		writeWatchPoll(stdout, result, collector.Health())
-		if pollErr != nil && heartbeatErr == nil && !expectedCollectorCancellation(ctx, pollErr) {
+		pollFailure := logPollFailureEpisode(logger, appCommandWatch, ctx, pollErr, heartbeatErr, stop, &pollFailureActive)
+		if pollFailure {
 			fmt.Fprintf(stderr, "collector poll: %v\n", pollErr)
 		}
-		logPollFailureEpisode(logger, appCommandWatch, ctx, pollErr, heartbeatErr, &pollFailureActive)
 		logCollectorHealthAndSummary(logger, appCommandWatch, health.Status, pollDuration, result, runHealth, &lastHealthStatus, &lastSummaryAt)
 		if heartbeatErr != nil {
 			terminalState, terminalError = "failed", heartbeatErr.Error()
@@ -807,12 +807,17 @@ func expectedCollectorCancellation(ctx context.Context, err error) bool {
 	return err != nil && ctx != nil && ctx.Err() != nil && errors.Is(err, context.Canceled)
 }
 
-func logPollFailureEpisode(logger applicationLog, command appCommand, ctx context.Context, pollErr, heartbeatErr error, active *bool) {
-	unexpected := pollErr != nil && heartbeatErr == nil && !expectedCollectorCancellation(ctx, pollErr)
+func expectedCollectorPollCancellation(ctx context.Context, err error, cooperativeStop bool) bool {
+	return expectedCollectorCancellation(ctx, err) || cooperativeStop && err != nil && errors.Is(err, context.Canceled)
+}
+
+func logPollFailureEpisode(logger applicationLog, command appCommand, ctx context.Context, pollErr, heartbeatErr error, cooperativeStop bool, active *bool) bool {
+	unexpected := pollErr != nil && heartbeatErr == nil && !expectedCollectorPollCancellation(ctx, pollErr, cooperativeStop)
 	if unexpected && !*active {
 		logger.Event(appLogCollectorFailed, appLogCodeCollectorPoll, command, 2)
 	}
 	*active = unexpected
+	return unexpected
 }
 
 func outcomeCounts(result tokenlogger.ImportResult) appLogOutcomeCounts {
@@ -958,7 +963,7 @@ func runWatchServeWithLogger(args []string, stderr io.Writer, ctx context.Contex
 		pollStarted := time.Now()
 		result, pollErr, heartbeatErr, stop := pollWithLeaseHeartbeat(ctx, store, options.instanceID, collector, staleWindow(options.interval))
 		pollDuration := time.Since(pollStarted).Milliseconds()
-		logPollFailureEpisode(logger, appCommandWatch, ctx, pollErr, heartbeatErr, &pollFailureActive)
+		logPollFailureEpisode(logger, appCommandWatch, ctx, pollErr, heartbeatErr, stop, &pollFailureActive)
 		if heartbeatErr != nil {
 			terminalState, terminalError = "failed", heartbeatErr.Error()
 			logger.Event(appLogCollectorFailed, appLogCodeCollectorHeartbeat, appCommandWatch, 2)

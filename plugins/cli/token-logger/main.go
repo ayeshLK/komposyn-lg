@@ -341,14 +341,14 @@ func startInteractiveCollectorWithLogger(store *tokenlogger.Store, roots []token
 			}
 		}()
 		runErr := collector.RunImmediate(ctx, func(result tokenlogger.ImportResult, pollErr error) {
-			logPollFailureEpisode(logger, appCommandInteractive, ctx, pollErr, nil, &pollFailureActive)
+			logPollFailureEpisode(logger, appCommandInteractive, ctx, pollErr, nil, false, &pollFailureActive)
 			health := collector.Health()
 			if err := store.CompleteCollectorPoll(instance, result, health, pollErr); err != nil {
 				logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandInteractive, 2)
 				return
 			}
 			runHealth = accumulateWatchHealth(runHealth, result, health)
-			logCollectorHealthAndSummary(logger, appCommandInteractive, health.Status, 0, result, runHealth, &lastHealthStatus, &lastSummaryAt)
+			logCollectorHealthAndSummary(logger, appCommandInteractive, health.Status, -1, result, runHealth, &lastHealthStatus, &lastSummaryAt)
 		})
 		if runErr != nil && !expectedCollectorCancellation(ctx, runErr) {
 			logger.Event(appLogCollectorFailed, appLogCodeCollectorPoll, appCommandInteractive, 2)
@@ -724,7 +724,7 @@ func runInteractiveLoopWithClockAndRootsAndLogger(reader interactiveLineReader, 
 	if leaveAfterDiagnosticPrompt {
 		return 0
 	}
-	if interactiveRender(stdout, stderr, store, &state, reader, now) {
+	if interactiveRenderWithLogger(stdout, stderr, store, &state, reader, now, logger) {
 		return 0
 	}
 	lastCollectorStatus := ""
@@ -795,6 +795,7 @@ func runInteractiveLoopWithClockAndRootsAndLogger(reader interactiveLineReader, 
 					ProjectID: projectID, From: inspectionFrom.UTC(), To: inspectionTo.UTC(),
 				})
 				if err != nil {
+					logger.Event(appLogCommandFailed, appLogCodeReportQuery, appCommandInteractive, appLogOperationExitCodeUnset)
 					fmt.Fprintf(stdout, "project inspection failed: %v\n", err)
 					continue
 				}
@@ -803,6 +804,7 @@ func runInteractiveLoopWithClockAndRootsAndLogger(reader interactiveLineReader, 
 					continue
 				}
 				if err := writeProjectInspectionText(stdout, inspection); err != nil {
+					logger.Event(appLogCommandFailed, appLogCodeReportRender, appCommandInteractive, appLogOperationExitCodeUnset)
 					fmt.Fprintf(stderr, "write project inspection failed: %v\n", err)
 					return 2
 				}
@@ -811,7 +813,7 @@ func runInteractiveLoopWithClockAndRootsAndLogger(reader interactiveLineReader, 
 			state.view = "projects"
 			state.projectID, state.projectName, state.projectLocation, state.sessionID = "", "", "", ""
 			state.clearModelSelection()
-			if interactiveRender(stdout, stderr, store, &state, reader, now) {
+			if interactiveRenderWithLogger(stdout, stderr, store, &state, reader, now, logger) {
 				return 0
 			}
 		case "/project":
@@ -827,7 +829,7 @@ func runInteractiveLoopWithClockAndRootsAndLogger(reader interactiveLineReader, 
 			}
 			state.projectID, state.projectName, state.projectLocation, state.sessionID, state.view = project.ID, project.DisplayName, project.Location, "", "project"
 			state.clearModelSelection()
-			if interactiveRender(stdout, stderr, store, &state, reader, now) {
+			if interactiveRenderWithLogger(stdout, stderr, store, &state, reader, now, logger) {
 				return 0
 			}
 		case "/sessions":
@@ -837,7 +839,7 @@ func runInteractiveLoopWithClockAndRootsAndLogger(reader interactiveLineReader, 
 			}
 			state.sessionID, state.view = "", "sessions"
 			state.clearModelSelection()
-			if interactiveRender(stdout, stderr, store, &state, reader, now) {
+			if interactiveRenderWithLogger(stdout, stderr, store, &state, reader, now, logger) {
 				return 0
 			}
 		case "/session":
@@ -853,7 +855,7 @@ func runInteractiveLoopWithClockAndRootsAndLogger(reader interactiveLineReader, 
 			}
 			state.sessionID, state.view = session.ID, "session"
 			state.clearModelSelection()
-			if interactiveRender(stdout, stderr, store, &state, reader, now) {
+			if interactiveRenderWithLogger(stdout, stderr, store, &state, reader, now, logger) {
 				return 0
 			}
 		case "/models":
@@ -863,7 +865,7 @@ func runInteractiveLoopWithClockAndRootsAndLogger(reader interactiveLineReader, 
 			}
 			state.clearModelSelection()
 			state.view = "models"
-			if interactiveRender(stdout, stderr, store, &state, reader, now) {
+			if interactiveRenderWithLogger(stdout, stderr, store, &state, reader, now, logger) {
 				return 0
 			}
 		case "/model":
@@ -878,7 +880,7 @@ func runInteractiveLoopWithClockAndRootsAndLogger(reader interactiveLineReader, 
 				continue
 			}
 			state.model, state.modelProvider, state.modelMissing, state.modelSelected, state.view = model.Model, model.Provider, model.Model == "", true, "model"
-			if interactiveRender(stdout, stderr, store, &state, reader, now) {
+			if interactiveRenderWithLogger(stdout, stderr, store, &state, reader, now, logger) {
 				return 0
 			}
 		case "/back":
@@ -892,37 +894,37 @@ func runInteractiveLoopWithClockAndRootsAndLogger(reader interactiveLineReader, 
 			} else {
 				state.view = ""
 			}
-			if interactiveRender(stdout, stderr, store, &state, reader, now) {
+			if interactiveRenderWithLogger(stdout, stderr, store, &state, reader, now, logger) {
 				return 0
 			}
 		case "/home":
 			state.projectID, state.projectName, state.projectLocation, state.sessionID, state.view = "", "", "", "", ""
 			state.clearModelSelection()
-			if interactiveRender(stdout, stderr, store, &state, reader, now) {
+			if interactiveRenderWithLogger(stdout, stderr, store, &state, reader, now, logger) {
 				return 0
 			}
 		case "/total-usage":
 			state.view = ""
 			state.groupBy = []string{tokenlogger.GroupClient, tokenlogger.GroupProvider, tokenlogger.GroupModel}
-			if interactiveRender(stdout, stderr, store, &state, reader, now) {
+			if interactiveRenderWithLogger(stdout, stderr, store, &state, reader, now, logger) {
 				return 0
 			}
 		case "/by-client":
 			state.view = ""
 			state.groupBy = []string{tokenlogger.GroupClient}
-			if interactiveRender(stdout, stderr, store, &state, reader, now) {
+			if interactiveRenderWithLogger(stdout, stderr, store, &state, reader, now, logger) {
 				return 0
 			}
 		case "/by-model":
 			state.view = ""
 			state.groupBy = []string{tokenlogger.GroupModel}
-			if interactiveRender(stdout, stderr, store, &state, reader, now) {
+			if interactiveRenderWithLogger(stdout, stderr, store, &state, reader, now, logger) {
 				return 0
 			}
 		case "/cost":
 			state.view = ""
 			state.groupBy = []string{tokenlogger.GroupClient, tokenlogger.GroupProvider, tokenlogger.GroupModel}
-			if interactiveRender(stdout, stderr, store, &state, reader, now) {
+			if interactiveRenderWithLogger(stdout, stderr, store, &state, reader, now, logger) {
 				return 0
 			}
 		case "/pricing":
@@ -931,15 +933,17 @@ func runInteractiveLoopWithClockAndRootsAndLogger(reader interactiveLineReader, 
 			filter.GroupBy = []string{tokenlogger.GroupProvider, tokenlogger.GroupModel}
 			report, err := store.Query(filter)
 			if err != nil {
+				logger.Event(appLogCommandFailed, appLogCodeReportQuery, appCommandInteractive, appLogOperationExitCodeUnset)
 				fmt.Fprintf(stderr, "query pricing coverage failed: %v\n", err)
 				continue
 			}
 			fmt.Fprintf(stdout, "pricing coverage for active scope (%s to %s UTC)\n", state.from.Format(time.RFC3339Nano), state.to.Format(time.RFC3339Nano))
 			if err := tokenlogger.WriteHumanPricingCoverage(stdout, report.PricingCoverage, terminalWidthOf(stdout)); err != nil {
+				logger.Event(appLogCommandFailed, appLogCodeReportRender, appCommandInteractive, appLogOperationExitCodeUnset)
 				fmt.Fprintf(stderr, "render pricing coverage failed: %v\n", err)
 			}
 		case "/refresh":
-			if interactiveRender(stdout, stderr, store, &state, reader, now) {
+			if interactiveRenderWithLogger(stdout, stderr, store, &state, reader, now, logger) {
 				return 0
 			}
 		case "/range":
@@ -958,7 +962,7 @@ func runInteractiveLoopWithClockAndRootsAndLogger(reader interactiveLineReader, 
 					continue
 				}
 				state.pinned = false
-				if interactiveRender(stdout, stderr, store, &state, reader, now) {
+				if interactiveRenderWithLogger(stdout, stderr, store, &state, reader, now, logger) {
 					return 0
 				}
 				continue
@@ -974,7 +978,7 @@ func runInteractiveLoopWithClockAndRootsAndLogger(reader interactiveLineReader, 
 				continue
 			}
 			state.from, state.to, state.pinned = from, to, true
-			if interactiveRender(stdout, stderr, store, &state, reader, now) {
+			if interactiveRenderWithLogger(stdout, stderr, store, &state, reader, now, logger) {
 				return 0
 			}
 		case "/settings":
@@ -1038,13 +1042,17 @@ func (state *interactiveState) clearModelSelection() {
 }
 
 func renderInteractive(stdout, stderr io.Writer, store *tokenlogger.Store, state *interactiveState, reader interactiveLineReader, now func() time.Time) error {
+	return renderInteractiveWithLogger(stdout, stderr, store, state, reader, now, discardApplicationLog{})
+}
+
+func renderInteractiveWithLogger(stdout, stderr io.Writer, store *tokenlogger.Store, state *interactiveState, reader interactiveLineReader, now func() time.Time, logger applicationLog) error {
 	state.resolveRange(now)
 	fmt.Fprintf(stdout, "\n%s\n", interactiveBreadcrumb(state))
 	resourceFilter := tokenlogger.ResourceFilter{From: state.from, To: state.to}
 	if state.view == "projects" {
 		list, err := store.ListProjects(resourceFilter)
 		if err != nil {
-			return renderInteractiveError(stdout, stderr, store, reader, err)
+			return renderInteractiveErrorWithLogger(stdout, stderr, store, reader, err, logger)
 		}
 		state.projectRows = append(state.projectRows[:0], list.Projects...)
 		state.projectRowsFrom, state.projectRowsTo = state.from, state.to
@@ -1052,21 +1060,30 @@ func renderInteractive(stdout, stderr io.Writer, store *tokenlogger.Store, state
 		state.recordReport(now().UTC())
 		writeInteractiveRange(stdout, state)
 		if _, err := fmt.Fprintln(stdout, projectInventoryNote); err != nil {
+			logger.Event(appLogCommandFailed, appLogCodeReportRender, appCommandInteractive, appLogOperationExitCodeUnset)
 			return err
 		}
-		return writeProjectTable(stdout, list.Projects)
+		if err := writeProjectTable(stdout, list.Projects); err != nil {
+			logger.Event(appLogCommandFailed, appLogCodeReportRender, appCommandInteractive, appLogOperationExitCodeUnset)
+			return err
+		}
+		return nil
 	}
 	if state.view == "sessions" {
 		list, err := store.ListSessions(state.projectID, resourceFilter)
 		if err != nil {
-			return renderInteractiveError(stdout, stderr, store, reader, err)
+			return renderInteractiveErrorWithLogger(stdout, stderr, store, reader, err, logger)
 		}
 		state.sessionRows = append(state.sessionRows[:0], list.Sessions...)
 		state.projectRows, state.modelRows = nil, nil
 		writeInteractiveProjectHeader(stdout, state)
 		state.recordReport(now().UTC())
 		writeInteractiveRange(stdout, state)
-		return writeSessionTable(stdout, list.Sessions)
+		if err := writeSessionTable(stdout, list.Sessions); err != nil {
+			logger.Event(appLogCommandFailed, appLogCodeReportRender, appCommandInteractive, appLogOperationExitCodeUnset)
+			return err
+		}
+		return nil
 	}
 	state.projectRows, state.sessionRows = nil, nil
 	filter := interactiveUsageFilter(state)
@@ -1081,7 +1098,7 @@ func renderInteractive(stdout, stderr io.Writer, store *tokenlogger.Store, state
 	}
 	report, err := store.Query(filter)
 	if err != nil {
-		return renderInteractiveError(stdout, stderr, store, reader, err)
+		return renderInteractiveErrorWithLogger(stdout, stderr, store, reader, err, logger)
 	}
 	if state.view == "project" {
 		writeInteractiveProjectHeader(stdout, state)
@@ -1093,7 +1110,11 @@ func renderInteractive(stdout, stderr io.Writer, store *tokenlogger.Store, state
 		for _, row := range report.Rows {
 			state.modelRows = append(state.modelRows, interactiveModelSelection{Model: row.Dimensions[tokenlogger.GroupModel], Provider: row.Dimensions[tokenlogger.GroupProvider]})
 		}
-		return writeInteractiveModelTable(stdout, report)
+		if err := writeInteractiveModelTable(stdout, report); err != nil {
+			logger.Event(appLogCommandFailed, appLogCodeReportRender, appCommandInteractive, appLogOperationExitCodeUnset)
+			return err
+		}
+		return nil
 	}
 	state.modelRows = nil
 	width := 0
@@ -1101,6 +1122,7 @@ func renderInteractive(stdout, stderr io.Writer, store *tokenlogger.Store, state
 		width = sized.TerminalWidth()
 	}
 	if err := tokenlogger.WriteTableWidthWithoutPricingCoverage(stdout, report, width); err != nil {
+		logger.Event(appLogCommandFailed, appLogCodeReportRender, appCommandInteractive, appLogOperationExitCodeUnset)
 		fmt.Fprintf(stderr, "render report failed: %v\n", err)
 	}
 	return nil
@@ -1122,6 +1144,11 @@ func interactiveUsageFilter(state *interactiveState) tokenlogger.UsageFilter {
 }
 
 func renderInteractiveError(stdout, stderr io.Writer, store *tokenlogger.Store, reader interactiveLineReader, err error) error {
+	return renderInteractiveErrorWithLogger(stdout, stderr, store, reader, err, discardApplicationLog{})
+}
+
+func renderInteractiveErrorWithLogger(stdout, stderr io.Writer, store *tokenlogger.Store, reader interactiveLineReader, err error, logger applicationLog) error {
+	logger.Event(appLogCommandFailed, appLogCodeReportQuery, appCommandInteractive, appLogOperationExitCodeUnset)
 	fmt.Fprintf(stderr, "usage query failed: %v\n", err)
 	if diagnostic, diagnosticErr := recordDiagnostic(store, err.Error(), tokenlogger.DiagnosticCategoryReporting); diagnosticErr == nil {
 		fmt.Fprintf(stdout, "Sanitized diagnostic saved locally: %s\n", diagnostic.Fingerprint)
@@ -1229,6 +1256,10 @@ func selectInteractiveModel(state *interactiveState, selector string) (interacti
 
 func interactiveRender(stdout, stderr io.Writer, store *tokenlogger.Store, state *interactiveState, reader interactiveLineReader, now func() time.Time) bool {
 	return renderInteractive(stdout, stderr, store, state, reader, now) != nil
+}
+
+func interactiveRenderWithLogger(stdout, stderr io.Writer, store *tokenlogger.Store, state *interactiveState, reader interactiveLineReader, now func() time.Time, logger applicationLog) bool {
+	return renderInteractiveWithLogger(stdout, stderr, store, state, reader, now, logger) != nil
 }
 
 func offerDiagnostic(reader interactiveLineReader, store *tokenlogger.Store, diagnostic tokenlogger.Diagnostic) error {

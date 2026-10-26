@@ -449,6 +449,7 @@ func (logger *eventLogger) Event(event appLogEvent, code appLogCode, command app
 
 const maxLoggedOutcomeCount int64 = 1<<53 - 1
 const maxLoggedDurationMillis int64 = 24 * 60 * 60 * 1000
+const appLogOperationExitCodeUnset = -1
 
 func boundedLogCount(value int64) int64 {
 	if value < 0 {
@@ -525,7 +526,7 @@ func (logger *eventLogger) encode(event appLogEvent, code appLogCode, command ap
 	if code != appLogCodeNone {
 		attrs = append(attrs, slog.String("code", code.String()))
 	}
-	if event == appLogProcessFinished || event == appLogCommandFailed {
+	if event == appLogProcessFinished || event == appLogCommandFailed && exitCode >= 0 {
 		attrs = append(attrs, slog.Int("exit_code", exitCode))
 	}
 	if event == appLogEventsSuppressed || event == appLogEventsDropped {
