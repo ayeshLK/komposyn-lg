@@ -33,6 +33,11 @@ The no-argument interactive mode has no `--data-dir` option; set
 `initialize.params.data_dir` in the request, or uses the environment/default
 resolution when omitted.
 
+Troubleshooting logs are stored separately from SQLite by default. Set
+`TOKEN_LOGGER_LOG_DIR` to override their directory; see
+[local troubleshooting logs](local-logs.md) for the shared default behavior,
+permissions, privacy, and rotation limits.
+
 The database and settings files are:
 
 ```text

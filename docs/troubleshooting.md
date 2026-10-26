@@ -5,6 +5,12 @@ local and sanitizes them before displaying or using them in an issue draft.
 Do not paste provider transcripts, prompts, responses, credentials, or raw
 diagnostics into an issue.
 
+The CLI also keeps a separate bounded local event log. See
+[local troubleshooting logs](local-logs.md) for its location, privacy limits,
+and inspection commands. Log initialization or write failure does not change
+command results; a detached collector records a safe pending diagnostic if its
+log sink becomes unavailable.
+
 ## The CLI cannot be found
 
 Confirm the installer directory is on `PATH`, or invoke the binary by its full

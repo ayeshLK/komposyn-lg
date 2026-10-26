@@ -15,6 +15,8 @@
   [troubleshooting](troubleshooting.md) — recovery and diagnosis.
 - [Privacy](privacy.md) and [security model](security-model.md) — local data,
   disclosure, and vulnerability reporting.
+- [Local troubleshooting logs](local-logs.md) — log location, privacy, bounds,
+  rotation, and recovery.
 
 ## Contributor guides
 
@@ -23,6 +25,8 @@
 - [Testing](contributing/testing.md) — checks and change-specific coverage.
 - [Collector resource measurements](contributing/resource-measurements.md) —
   reproducible process measurements.
+- [Issue #56 logging evidence](issue-56-local-logging-evidence.md) — synthetic
+  resource sample and validation scope for local troubleshooting logs.
 - [Windows console testing](contributing/windows-console-testing.md) — native
   input and terminal behavior.
 - [REPL information hierarchy](repl-experience.md) — maintained interaction

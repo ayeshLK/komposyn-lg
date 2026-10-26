@@ -21,8 +21,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	tokenlogger "github.com/ayeshLK/komposyn/plugins/library/token-logger"
@@ -36,12 +38,22 @@ var watchSubcommands = map[string]bool{
 }
 
 func runWatchWithContext(args []string, stdout, stderr io.Writer, ctx context.Context) int {
+	return runWatchWithContextAndLogger(args, stdout, stderr, ctx, discardApplicationLog{})
+}
+
+func runWatchWithLogger(args []string, stdout, stderr io.Writer, logger applicationLog) int {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return runWatchWithContextAndLogger(args, stdout, stderr, ctx, logger)
+}
+
+func runWatchWithContextAndLogger(args []string, stdout, stderr io.Writer, ctx context.Context, logger applicationLog) int {
 	if len(args) == 0 {
 		fmt.Fprintln(stderr, watchUsage)
 		return 1
 	}
 	if !watchSubcommands[args[0]] {
-		return runForegroundWatch(args, stdout, stderr, ctx, false)
+		return runForegroundWatchWithLogger(args, stdout, stderr, ctx, false, logger)
 	}
 	switch args[0] {
 	case "add":
@@ -57,9 +69,9 @@ func runWatchWithContext(args []string, stdout, stderr io.Writer, ctx context.Co
 	case "stop":
 		return runWatchStop(args[1:], stdout, stderr)
 	case "foreground":
-		return runForegroundWatch(args[1:], stdout, stderr, ctx, true)
+		return runForegroundWatchWithLogger(args[1:], stdout, stderr, ctx, true, logger)
 	case "serve":
-		return runWatchServe(args[1:], stderr, ctx)
+		return runWatchServeWithLogger(args[1:], stderr, ctx, logger)
 	default:
 		fmt.Fprintln(stderr, watchUsage)
 		return 1
@@ -527,6 +539,10 @@ func runWatchStop(args []string, stdout, stderr io.Writer) int {
 }
 
 func runForegroundWatch(args []string, stdout, stderr io.Writer, ctx context.Context, registryFallback bool) int {
+	return runForegroundWatchWithLogger(args, stdout, stderr, ctx, registryFallback, discardApplicationLog{})
+}
+
+func runForegroundWatchWithLogger(args []string, stdout, stderr io.Writer, ctx context.Context, registryFallback bool, logger applicationLog) int {
 	roots, options, err := parseWatchOptions(args, true)
 	if err == nil {
 		err = validateWatchOptions(options, "interval")
@@ -570,11 +586,20 @@ func runForegroundWatch(args []string, stdout, stderr io.Writer, ctx context.Con
 		return 2
 	}
 	if err != nil {
+		logger.Event(appLogCollectorFailed, appLogCodeCollectorAcquire, appCommandWatch, 2)
 		fmt.Fprintf(stderr, "acquire foreground collector lease: %v\n", err)
 		return 2
 	}
 	terminalState, terminalError := "stopped", ""
-	defer func() { _ = store.ReleaseCollectorLease(instanceID, terminalState, terminalError) }()
+	logger.Event(appLogCollectorStarted, appLogCodeNone, appCommandWatch, 0)
+	defer func() {
+		_ = store.ReleaseCollectorLease(instanceID, terminalState, terminalError)
+		if terminalState == "failed" {
+			logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
+		} else {
+			logger.Event(appLogCollectorStopped, appLogCodeNone, appCommandWatch, 0)
+		}
+	}()
 	if err := store.MarkCollectorReady(instanceID); err != nil {
 		terminalState, terminalError = "failed", err.Error()
 		fmt.Fprintf(stderr, "publish foreground collector readiness: %v\n", err)
@@ -646,6 +671,7 @@ func runForegroundWatch(args []string, stdout, stderr io.Writer, ctx context.Con
 		writeWatchPoll(stdout, result, collector.Health())
 		if pollErr != nil && !errors.Is(pollErr, context.Canceled) && !errors.Is(pollErr, context.DeadlineExceeded) {
 			fmt.Fprintf(stderr, "collector poll: %v\n", pollErr)
+			logger.Event(appLogCollectorFailed, appLogCodeCollectorPoll, appCommandWatch, 2)
 		}
 		if heartbeatErr != nil {
 			terminalState, terminalError = "failed", heartbeatErr.Error()
@@ -708,6 +734,10 @@ func writeStoppedWatchSummary(output io.Writer, health tokenlogger.CollectorHeal
 }
 
 func runWatchServe(args []string, stderr io.Writer, ctx context.Context) int {
+	return runWatchServeWithLogger(args, stderr, ctx, discardApplicationLog{})
+}
+
+func runWatchServeWithLogger(args []string, stderr io.Writer, ctx context.Context, logger applicationLog) int {
 	_, options, err := parseWatchOptions(args, false)
 	if err == nil {
 		err = validateWatchOptions(options, "interval", "instance")
@@ -722,16 +752,33 @@ func runWatchServe(args []string, stderr io.Writer, ctx context.Context) int {
 		return 2
 	}
 	defer store.Close()
+	logFailureRecorded := false
+	recordLogFailure := func() {
+		if !logFailureRecorded && logger.Unavailable() {
+			_, _ = recordDiagnostic(store, "reason=local_log_sink_unavailable", tokenlogger.DiagnosticCategoryCLI)
+			logFailureRecorded = true
+		}
+	}
+	recordLogFailure()
 	recovered, err := store.AcquireCollectorLease(options.instanceID, os.Getpid(), cliVersion, "background", options.interval, staleWindow(options.interval))
 	if errors.Is(err, tokenlogger.ErrCollectorActive) {
 		return 0
 	}
 	if err != nil {
+		logger.Event(appLogCollectorFailed, appLogCodeCollectorAcquire, appCommandWatch, 2)
 		fmt.Fprintf(stderr, "acquire collector lease: %v\n", err)
 		return 2
 	}
 	terminalState, terminalError := "stopped", ""
-	defer func() { _ = store.ReleaseCollectorLease(options.instanceID, terminalState, terminalError) }()
+	logger.Event(appLogCollectorStarted, appLogCodeNone, appCommandWatch, 0)
+	defer func() {
+		_ = store.ReleaseCollectorLease(options.instanceID, terminalState, terminalError)
+		if terminalState == "failed" {
+			logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
+		} else {
+			logger.Event(appLogCollectorStopped, appLogCodeNone, appCommandWatch, 0)
+		}
+	}()
 	if err := store.MarkCollectorReady(options.instanceID); err != nil {
 		terminalState, terminalError = "failed", err.Error()
 		return 2
@@ -767,6 +814,9 @@ func runWatchServe(args []string, stderr io.Writer, ctx context.Context) int {
 			return 2
 		}
 		result, pollErr, heartbeatErr, stop := pollWithLeaseHeartbeat(ctx, store, options.instanceID, collector, staleWindow(options.interval))
+		if pollErr != nil && !errors.Is(pollErr, context.Canceled) && !errors.Is(pollErr, context.DeadlineExceeded) {
+			logger.Event(appLogCollectorFailed, appLogCodeCollectorPoll, appCommandWatch, 2)
+		}
 		if heartbeatErr != nil {
 			terminalState, terminalError = "failed", heartbeatErr.Error()
 			return 2
@@ -780,6 +830,7 @@ func runWatchServe(args []string, stderr io.Writer, ctx context.Context) int {
 			terminalState, terminalError = "failed", err.Error()
 			return 2
 		}
+		recordLogFailure()
 		if stop || ctx.Err() != nil {
 			return 0
 		}

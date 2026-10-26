@@ -19,6 +19,15 @@ Settings are stored separately in the configured data directory. Registered
 paths are path-explicit local administrative data shown by `watch list`; they
 are excluded from diagnostics and issue drafts.
 
+The CLI also writes bounded JSONL troubleshooting logs under the user's home
+directory by default. Logs contain fixed event names, command categories,
+versions, process/run identifiers, and selected exit/error codes. They do not
+accept raw arguments, raw errors, provider paths, project/session names, source
+records, prompts, or responses. They are separate from SQLite and may be shared
+by CLI processes that use different data directories. See
+[local troubleshooting logs](local-logs.md) for exact paths, limits, rotation,
+and safe inspection guidance. Review log files before sharing them.
+
 ## What is not stored by default
 
 Komposyn does not intentionally persist prompts, model responses, full provider

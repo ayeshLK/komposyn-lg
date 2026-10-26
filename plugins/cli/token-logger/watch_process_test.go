@@ -47,18 +47,18 @@ func TestStartDetachedCollectorLaunchesWithoutInheritedStreams(t *testing.T) {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(5 * time.Second)
+	var lastContents []byte
 	for time.Now().Before(deadline) {
 		contents, readErr := os.ReadFile(marker)
 		if readErr == nil {
-			if string(contents) != "ready" {
-				t.Fatalf("detached marker = %q", contents)
+			lastContents = contents
+			if string(contents) == "ready" {
+				return
 			}
-			return
-		}
-		if !os.IsNotExist(readErr) {
+		} else if !os.IsNotExist(readErr) {
 			t.Fatal(readErr)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatal("detached helper did not signal readiness")
+	t.Fatalf("detached helper did not write ready marker; last contents=%q", lastContents)
 }
