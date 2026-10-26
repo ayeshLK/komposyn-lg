@@ -6,6 +6,11 @@ published core v0.9.0 dependency. The CLI owns the bounded local
 JSONL sink and operation context. Core v0.9.0 does not provide the optional
 typed operational event interface proposed by core #163, so this increment
 uses controlled generic classifications where the cause is unavailable.
+The implementation and resource-harness revision is
+`1d04d49` (`feat(logging): instrument CLI operational paths`). At measurement
+time, published CLI v0.11.0 pointed to `304804f8c13d6f1d81fd193ec4f518ba44110d6b`;
+the measured current-master tree includes the merged #56 logging work after
+that tag. The PR does not change the CLI version.
 
 | Operation | Existing or added evidence | Severity | Regression coverage |
 | --- | --- | --- | --- |
