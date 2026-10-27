@@ -16,6 +16,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -345,6 +346,85 @@ func TestInteractiveReportWriterFailureIsLoggedSafely(t *testing.T) {
 	}
 	if !strings.Contains(string(contents), `"code":"report_render"`) || strings.Contains(string(contents), `"exit_code"`) || strings.Contains(string(contents), marker) {
 		t.Fatalf("interactive renderer failure was not safely classified: %s", contents)
+	}
+}
+
+func TestInteractiveProjectAndSessionLookupFailuresAreLoggedSafely(t *testing.T) {
+	for _, target := range []string{"project", "session"} {
+		t.Run(target, func(t *testing.T) {
+			dataDir := t.TempDir()
+			store, err := tokenlogger.Open(filepath.Join(dataDir, "token-logger.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			event := cliReportEvent("lookup-failure", time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC))
+			event.ProjectID, event.SessionID = "lookup-project", "lookup-session"
+			if _, err := store.AppendWithReferences([]tokenlogger.UsageEvent{event},
+				[]tokenlogger.Project{{ID: event.ProjectID, Root: filepath.Join(dataDir, "workspace"), DisplayName: "Lookup Project"}},
+				[]tokenlogger.Session{{ID: event.SessionID, ProjectID: event.ProjectID, Client: event.Client}}); err != nil {
+				_ = store.Close()
+				t.Fatal(err)
+			}
+
+			commands := "/project lookup-project\n/quit\n"
+			closeOn := "/project"
+			if target == "session" {
+				commands = "/project lookup-project\n/session lookup-session\n/quit\n"
+				closeOn = "/session"
+			}
+			baseReader := &scannerLineReader{scanner: bufio.NewScanner(strings.NewReader(commands)), output: io.Discard}
+			closed := false
+			reader := &beforeReadLineReader{scannerLineReader: baseReader, before: func(line string) {
+				if !closed && strings.HasPrefix(line, closeOn+" ") {
+					closed = true
+					if err := store.Close(); err != nil {
+						t.Errorf("close store before lookup: %v", err)
+					}
+				}
+			}}
+			logger := &recordingApplicationLog{}
+			var stdout, stderr bytes.Buffer
+			if code := runInteractiveLoopWithClockAndRootsAndLogger(reader, &stdout, &stderr, store, dataDir, defaultSettings(dataDir), false,
+				func() time.Time { return time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC) }, nil, logger); code != 0 {
+				t.Fatalf("REPL exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+			}
+			if !closed || !logger.has(appLogCommandFailed, appLogCodeReportQuery) {
+				t.Fatalf("operational lookup failure was not classified: closed=%t events=%+v", closed, logger.events)
+			}
+			logger.mu.Lock()
+			defer logger.mu.Unlock()
+			found := false
+			for _, event := range logger.events {
+				if event.event == appLogCommandFailed && event.code == appLogCodeReportQuery {
+					found = true
+					if event.command != appCommandInteractive || event.exit != appLogOperationExitCodeUnset {
+						t.Fatalf("lookup event metadata=%+v", event)
+					}
+				}
+			}
+			if !found || strings.Contains(stdout.String(), "database is closed") || strings.Contains(stderr.String(), "database is closed") {
+				t.Fatalf("lookup leaked raw DB error or omitted event: events=%+v stdout=%q stderr=%q", logger.events, stdout.String(), stderr.String())
+			}
+		})
+	}
+}
+
+func TestInteractiveInvalidProjectSelectionDoesNotLogQueryFailure(t *testing.T) {
+	dataDir := t.TempDir()
+	store, err := tokenlogger.Open(filepath.Join(dataDir, "token-logger.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	logger := &recordingApplicationLog{}
+	var stdout, stderr bytes.Buffer
+	reader := &scannerLineReader{scanner: bufio.NewScanner(strings.NewReader("/project missing-project\n/quit\n")), output: io.Discard}
+	if code := runInteractiveLoopWithClockAndRootsAndLogger(reader, &stdout, &stderr, store, dataDir, defaultSettings(dataDir), false,
+		func() time.Time { return time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC) }, nil, logger); code != 0 {
+		t.Fatalf("REPL exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "selector matched 0 projects") || logger.has(appLogCommandFailed, appLogCodeReportQuery) {
+		t.Fatalf("ordinary not-found selection was misclassified: events=%+v stdout=%q", logger.events, stdout.String())
 	}
 }
 

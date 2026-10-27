@@ -19,6 +19,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -824,6 +825,9 @@ func runInteractiveLoopWithClockAndRootsAndLogger(reader interactiveLineReader, 
 			state.resolveRange(now)
 			project, err := selectInteractiveProject(store, &state, tokenlogger.ResourceFilter{From: state.from, To: state.to}, selector)
 			if err != nil {
+				if interactiveSelectionHadQueryFailure(err) {
+					logger.Event(appLogCommandFailed, appLogCodeReportQuery, appCommandInteractive, appLogOperationExitCodeUnset)
+				}
 				fmt.Fprintf(stdout, "project selection failed: %v\n", err)
 				continue
 			}
@@ -850,6 +854,9 @@ func runInteractiveLoopWithClockAndRootsAndLogger(reader interactiveLineReader, 
 			state.resolveRange(now)
 			session, err := selectInteractiveSession(store, &state, tokenlogger.ResourceFilter{From: state.from, To: state.to}, selector)
 			if err != nil {
+				if interactiveSelectionHadQueryFailure(err) {
+					logger.Event(appLogCommandFailed, appLogCodeReportQuery, appCommandInteractive, appLogOperationExitCodeUnset)
+				}
 				fmt.Fprintf(stdout, "session selection failed: %v\n", err)
 				continue
 			}
@@ -1181,6 +1188,18 @@ func interactiveBreadcrumb(state *interactiveState) string {
 
 func interactivePrompt(state *interactiveState) string { return interactiveBreadcrumb(state) + " > " }
 
+type interactiveSelectionError struct {
+	message      string
+	queryFailure bool
+}
+
+func (selectionErr *interactiveSelectionError) Error() string { return selectionErr.message }
+
+func interactiveSelectionHadQueryFailure(err error) bool {
+	var selectionErr *interactiveSelectionError
+	return errors.As(err, &selectionErr) && selectionErr.queryFailure
+}
+
 func selectInteractiveProject(store *tokenlogger.Store, state *interactiveState, filter tokenlogger.ResourceFilter, selector string) (tokenlogger.ProjectResource, error) {
 	if row, err := strconv.Atoi(selector); err == nil {
 		if state.view != "projects" || row < 1 || row > len(state.projectRows) {
@@ -1189,6 +1208,7 @@ func selectInteractiveProject(store *tokenlogger.Store, state *interactiveState,
 		return state.projectRows[row-1], nil
 	}
 	var matches []tokenlogger.ProjectResource
+	queryFailure := false
 	for _, project := range state.projectRows {
 		if project.ID == selector || strings.EqualFold(project.DisplayName, selector) {
 			matches = append(matches, project)
@@ -1199,9 +1219,12 @@ func selectInteractiveProject(store *tokenlogger.Store, state *interactiveState,
 		if err == nil {
 			return project, nil
 		}
+		queryFailure = !errors.Is(err, sql.ErrNoRows)
 	}
 	if len(matches) != 1 {
-		return tokenlogger.ProjectResource{}, fmt.Errorf("selector matched %d projects; use a row or stable ID", len(matches))
+		return tokenlogger.ProjectResource{}, &interactiveSelectionError{
+			message: fmt.Sprintf("selector matched %d projects; use a row or stable ID", len(matches)), queryFailure: queryFailure,
+		}
 	}
 	return matches[0], nil
 }
@@ -1214,6 +1237,7 @@ func selectInteractiveSession(store *tokenlogger.Store, state *interactiveState,
 		return state.sessionRows[row-1], nil
 	}
 	var matches []tokenlogger.SessionResource
+	queryFailure := false
 	for _, session := range state.sessionRows {
 		if session.ID == selector || strings.HasPrefix(session.ID, selector) {
 			matches = append(matches, session)
@@ -1224,9 +1248,12 @@ func selectInteractiveSession(store *tokenlogger.Store, state *interactiveState,
 		if err == nil {
 			return session, nil
 		}
+		queryFailure = !errors.Is(err, sql.ErrNoRows) && err.Error() != "session does not belong to the selected project"
 	}
 	if len(matches) != 1 {
-		return tokenlogger.SessionResource{}, fmt.Errorf("selector matched %d sessions; use a row or longer stable ID", len(matches))
+		return tokenlogger.SessionResource{}, &interactiveSelectionError{
+			message: fmt.Sprintf("selector matched %d sessions; use a row or longer stable ID", len(matches)), queryFailure: queryFailure,
+		}
 	}
 	return matches[0], nil
 }
