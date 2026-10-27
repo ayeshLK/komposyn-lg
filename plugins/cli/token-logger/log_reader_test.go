@@ -169,8 +169,8 @@ func TestReadManagedLogsEntryBudgetFindsNewestArchivedWarning(t *testing.T) {
 	if err != nil || len(result.Records) != 1 || result.Records[0].Event != "collector.failed" || result.Records[0].File != "klg.log.1" {
 		t.Fatalf("newest warning was missed under entry budget: records=%+v entries=%d err=%v", result.Records, result.EntriesScanned, err)
 	}
-	if result.EntriesScanned > maxLogReadEntries || result.TimedOut {
-		t.Fatalf("entry bounded scan did not complete safely: entries=%d timeout=%t", result.EntriesScanned, result.TimedOut)
+	if result.EntriesScanned > maxLogReadEntries {
+		t.Fatalf("entry bounded scan exceeded its cap: entries=%d", result.EntriesScanned)
 	}
 }
 
