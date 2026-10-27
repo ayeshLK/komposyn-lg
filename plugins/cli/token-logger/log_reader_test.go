@@ -165,7 +165,7 @@ func TestReadManagedLogsEntryBudgetFindsNewestArchivedWarning(t *testing.T) {
 	}
 	writeMany("klg.log", 15000, "")
 	writeMany("klg.log.1", 15000, syntheticLogLine("2026-10-20T10:01:00Z", "WARN", "collector.failed", `"code":"collector_poll"`))
-	result, err := readManagedLogs(dir, logReadOptions{MinLevel: "warn", Limit: 10})
+	result, err := readManagedLogs(dir, logReadOptions{MinLevel: "warn", Limit: 10, Deadline: time.Now().Add(30 * time.Second)})
 	if err != nil || len(result.Records) != 1 || result.Records[0].Event != "collector.failed" || result.Records[0].File != "klg.log.1" {
 		t.Fatalf("newest warning was missed under entry budget: records=%+v entries=%d err=%v", result.Records, result.EntriesScanned, err)
 	}
