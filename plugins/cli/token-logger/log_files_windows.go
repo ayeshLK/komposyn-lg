@@ -100,6 +100,29 @@ func openPrivateLogFile(path string, flags int, _ os.FileMode) (*os.File, error)
 	return file, nil
 }
 
+// openReadOnlyLogFile allows concurrent append and rename while protecting the
+// path itself from reparse-point traversal. It never changes the file ACL.
+func openReadOnlyLogFile(path string) (*os.File, error) {
+	handle, err := windows.CreateFile(windows.StringToUTF16Ptr(path), windows.GENERIC_READ,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, nil,
+		windows.OPEN_EXISTING, windows.FILE_ATTRIBUTE_NORMAL|windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
+	if err != nil {
+		return nil, err
+	}
+	var info windows.ByHandleFileInformation
+	if err := windows.GetFileInformationByHandle(handle, &info); err != nil || info.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 || info.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY != 0 {
+		_ = windows.CloseHandle(handle)
+		return nil, errors.New("unsafe log file")
+	}
+	file := os.NewFile(uintptr(handle), path)
+	stat, err := file.Stat()
+	if err != nil || !stat.Mode().IsRegular() {
+		_ = file.Close()
+		return nil, errors.New("unsafe log file")
+	}
+	return file, nil
+}
+
 func privateLogACL() (*windows.ACL, error) {
 	user, err := windows.GetCurrentProcessToken().GetTokenUser()
 	if err != nil {

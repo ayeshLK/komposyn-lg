@@ -83,6 +83,21 @@ func openPrivateLogFile(path string, flags int, mode os.FileMode) (*os.File, err
 	return file, nil
 }
 
+// openReadOnlyLogFile opens an existing managed file without changing its mode.
+func openReadOnlyLogFile(path string) (*os.File, error) {
+	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_CLOEXEC|unix.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, err
+	}
+	file := os.NewFile(uintptr(fd), path)
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		_ = file.Close()
+		return nil, errors.New("unsafe log file")
+	}
+	return file, nil
+}
+
 func renameLogFile(source, target string) error {
 	if exists, _, err := inspectLogTarget(source); err != nil {
 		return err

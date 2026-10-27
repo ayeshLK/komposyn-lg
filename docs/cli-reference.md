@@ -10,7 +10,7 @@ Commands that access stored data and document the option below use
 interactive mode, which does not accept a command-line option. Without an
 override, data is stored under `$HOME/.komposyn/token-logger/data`; legacy data
 is discovered as described in [Configuration](configuration.md). The `version`,
-`help`, and `completion` commands do not use a data directory. Help and
+`help`, `completion`, and `logs show` commands do not use a data directory. Help and
 completion also work when the user's home directory cannot be resolved; they
 do not open the database, run onboarding, or start collection. Harness clients
 may select one through
@@ -298,6 +298,33 @@ of the destination directory, so choose a directory with appropriate access
 controls. The archive contains `diagnostics.json`; it does not include provider
 transcripts, prompts, responses, credentials, or source files. This command
 performs no network request and does not mark diagnostics as reviewed.
+
+### `logs show`
+
+```text
+komposyn-lg logs show [--since <RFC3339>] [--level <debug|info|warn|error>]
+  [--limit <1-200>] [--format text|json]
+```
+
+Inspects only the managed `klg.log` file and archives `.1` through `.3`. This
+path does not initialize the log writer, open SQLite, create directories, or
+start collection. The location uses `TOKEN_LOGGER_LOG_DIR` when set, otherwise
+`<user-home>/.komposyn/token-logger`, independently of the database directory.
+`--since` accepts RFC3339 timestamps with an explicit UTC offset and compares
+in UTC. `--level` is a minimum severity. The default response contains up to
+50 records (hard cap 200); the reader scans at most 20 MiB and 25,000 physical
+entries, with a cooperative two-second work deadline. It accepts lines up to
+8 KiB, limits text fields to 256 bytes, and rejects nested values. Output
+prioritizes the active file, then archives, with reverse physical line order
+inside each file. It does not
+claim a global chronological order across processes. JSON uses its own
+`format_version: 1`, independent of harness protocol-v1. Missing files,
+retention gaps, malformed/unsupported entries, and scan/response truncation
+are explicit. No database is created or opened, even when it is missing, busy,
+unsupported, or unopenable. Status 0 means inspection completed or logs were
+unavailable; status 1 means invalid arguments; status 2 means an unsafe or
+unreadable log target or output failure. Local output includes process/run IDs
+and exact timestamps; inspect it before sharing.
 
 ### `harness`
 
