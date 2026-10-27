@@ -3,17 +3,21 @@
 ## Local setup
 
 Install Go 1.26.9 or newer and work from a feature branch. This module is
-`github.com/ayeshLK/komposyn-lg`; the CLI source remains under
-`plugins/cli/token-logger` to preserve the extracted layout. The module requires
+`github.com/ayeshLK/komposyn-lg`; executable source and tests live in the
+top-level `cli/` directory. The module requires
 `github.com/ayeshLK/komposyn v0.9.0` or newer and must not use a permanent
 `replace` directive.
 
 Keep local build output in the ignored `bin/` directory. Use a fresh temporary
 directory for release output rather than the repository root.
+Use the explicit output path in the build command below to produce the
+`komposyn-lg` executable; Go otherwise derives the executable name from the
+package path.
 
 ## Useful commands
 
 ```sh
+go build -o bin/komposyn-lg ./cli
 go test ./...
 go test -race ./...
 go vet ./...
@@ -26,7 +30,7 @@ make build
 Focused CLI tests can be run while iterating:
 
 ```sh
-go test ./plugins/cli/token-logger -run TestName
+go test ./cli -run TestName
 ```
 
 The CI vulnerability check uses govulncheck v1.1.4 and fails for reachable

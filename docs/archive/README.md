@@ -2,6 +2,12 @@
 
 This directory preserves investigation reports, release snapshots, and measurement evidence that explain past decisions. These records retain the versions, commands, results, and limitations that applied when they were written. They are not maintained product instructions and do not establish readiness for a current release. Use the maintained guides linked below for current behavior and requirements.
 
+Historical source and fixture paths in these records describe the checkout at
+the time of each investigation. The current executable source is in [`cli/`](../../cli/),
+and the current synthetic provider fixtures are in
+[`testdata/providers/`](../../testdata/providers/); the layout move preserves
+the fixture bytes.
+
 ## Performance
 
 [`performance/`](performance/) contains issue #23 baselines, comparisons, and integration records. Current measurement practice is in [contributor resource measurements](../contributing/resource-measurements.md).

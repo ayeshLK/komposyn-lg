@@ -181,7 +181,7 @@ func TestProjectInspectionNormalCodexAndClaudeImports(t *testing.T) {
 	for _, provider := range []string{"codex", "claude-code"} {
 		t.Run(provider, func(t *testing.T) {
 			dataDir := t.TempDir()
-			fixture := filepath.Join("..", "..", "library", "token-logger", "testdata", provider, "normal.jsonl")
+			fixture := filepath.Join("..", "testdata", "providers", provider, "normal.jsonl")
 			var imported, importErr bytes.Buffer
 			if code := run([]string{"import", fixture, "--data-dir", dataDir}, &imported, &importErr); code != 0 {
 				t.Fatalf("import exit=%d stderr=%q stdout=%q", code, importErr.String(), imported.String())

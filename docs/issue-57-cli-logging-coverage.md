@@ -12,6 +12,10 @@ time, published CLI v0.11.0 pointed to `304804f8c13d6f1d81fd193ec4f518ba44110d6b
 the measured current-master tree includes the merged #56 logging work after
 that tag. The PR does not change the CLI version.
 
+The command and source paths in this evidence reflect the measured checkout.
+The current CLI package path is `./cli`; no measurements were rerun solely
+because the source directory moved.
+
 | Operation | Existing or added evidence | Severity | Regression coverage |
 | --- | --- | --- | --- |
 | Data-directory resolution | `data_directory.resolved` with one of `explicit`, `environment`, `current_default`, `legacy_default`; `command.failed` / `data_directory` on failure. No path is logged. | Info / warning | `datadir_test.go`; `TestInteractiveDatabaseOpenFailureIsLoggedBeforeStoreExists` |

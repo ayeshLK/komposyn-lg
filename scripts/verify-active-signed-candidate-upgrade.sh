@@ -108,7 +108,7 @@ chmod 0755 "$install_dir/komposyn-lg"
 binary="$install_dir/komposyn-lg"
 
 run_old() { TOKEN_LOGGER_DATA_DIR="$data_dir" "$binary" "$@"; }
-fixture="$(cd "$(dirname "${BASH_SOURCE[0]}")/../plugins/library/token-logger/testdata/codex" && pwd)/normal.jsonl"
+fixture="$(cd "$(dirname "${BASH_SOURCE[0]}")/../testdata/providers/codex" && pwd)/normal.jsonl"
 cp "$fixture" "$source_dir/normal.jsonl"
 run_old settings --collector off --auto-start off >/dev/null
 run_old watch add "$source_dir" >/dev/null

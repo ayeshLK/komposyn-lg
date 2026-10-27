@@ -36,7 +36,7 @@ for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 wi
 		binary="$stage_dir/komposyn-lg"
 		archive="$output_dir/${asset}.tar.gz"
 	fi
-	GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=0 go build -trimpath -ldflags "$ldflags" -o "$binary" "$root_dir/plugins/cli/token-logger"
+	GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=0 go build -trimpath -ldflags "$ldflags" -o "$binary" "$root_dir/cli"
 	cp "$root_dir/LICENSE" "$root_dir/NOTICE" "$root_dir/README.md" "$output_dir/THIRD_PARTY_LICENSES.md" "$stage_dir/"
 	cp -R "$output_dir/third_party_licenses" "$stage_dir/"
 	if [[ "$goos" == windows ]]; then

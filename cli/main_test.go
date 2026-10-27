@@ -89,7 +89,7 @@ func (buffer *cancelOnWriteBuffer) Write(value []byte) (int, error) {
 
 func TestImportCommand(t *testing.T) {
 	dataDir := t.TempDir()
-	fixture := filepath.Join("..", "..", "library", "token-logger", "testdata", "codex", "normal.jsonl")
+	fixture := filepath.Join("..", "testdata", "providers", "codex", "normal.jsonl")
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"import", fixture, "--data-dir", dataDir}, &stdout, &stderr)
 	if code != 0 {
@@ -191,7 +191,7 @@ func TestClaudeFallbackCreditImportIsVisibleInReportsAndInteractiveMode(t *testi
 
 func TestClaudeImportCommand(t *testing.T) {
 	dataDir := t.TempDir()
-	fixture := filepath.Join("..", "..", "library", "token-logger", "testdata", "claude-code", "normal.jsonl")
+	fixture := filepath.Join("..", "testdata", "providers", "claude-code", "normal.jsonl")
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"import", fixture, "--data-dir", dataDir}, &stdout, &stderr)
 	if code != 0 {
@@ -204,8 +204,8 @@ func TestClaudeImportCommand(t *testing.T) {
 
 func TestWatchRegistryCommandsAndMultiRootForeground(t *testing.T) {
 	dataDir := t.TempDir()
-	codex := filepath.Join("..", "..", "library", "token-logger", "testdata", "codex")
-	claude := filepath.Join("..", "..", "library", "token-logger", "testdata", "claude-code")
+	codex := filepath.Join("..", "testdata", "providers", "codex")
+	claude := filepath.Join("..", "testdata", "providers", "claude-code")
 	var stdout, stderr bytes.Buffer
 	if code := run([]string{"watch", "add", codex, claude, "--data-dir", dataDir}, &stdout, &stderr); code != 0 {
 		t.Fatalf("watch add code=%d stderr=%q", code, stderr.String())
@@ -289,7 +289,7 @@ func TestForegroundWatchRejectsActiveCollectorLease(t *testing.T) {
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
-	fixture := filepath.Join("..", "..", "library", "token-logger", "testdata", "claude-code", "normal.jsonl")
+	fixture := filepath.Join("..", "testdata", "providers", "claude-code", "normal.jsonl")
 	var stdout, stderr bytes.Buffer
 	code := runWatchWithContext([]string{"foreground", fixture, "--data-dir", dataDir}, &stdout, &stderr, context.Background())
 	if code != 2 || !strings.Contains(stderr.String(), "another collector is already active") {
@@ -352,7 +352,7 @@ func TestPollWithLeaseHeartbeatHonorsStopRequest(t *testing.T) {
 
 func TestFastForegroundWatchHonorsCooperativeStop(t *testing.T) {
 	dataDir := t.TempDir()
-	fixture := filepath.Join("..", "..", "library", "token-logger", "testdata", "claude-code", "normal.jsonl")
+	fixture := filepath.Join("..", "testdata", "providers", "claude-code", "normal.jsonl")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan int, 1)
@@ -395,11 +395,11 @@ func TestFastForegroundWatchHonorsCooperativeStop(t *testing.T) {
 
 func TestRegistryForegroundReloadsSourcesBeforeEachPoll(t *testing.T) {
 	dataDir := t.TempDir()
-	claude, err := filepath.Abs(filepath.Join("..", "..", "library", "token-logger", "testdata", "claude-code"))
+	claude, err := filepath.Abs(filepath.Join("..", "testdata", "providers", "claude-code"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	codex, err := filepath.Abs(filepath.Join("..", "..", "library", "token-logger", "testdata", "codex"))
+	codex, err := filepath.Abs(filepath.Join("..", "testdata", "providers", "codex"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -520,7 +520,7 @@ func TestRegistryForegroundSummaryAccumulatesAcrossReloadedCollectors(t *testing
 	if err := os.Mkdir(root, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	fixture, err := os.ReadFile(filepath.Join("..", "..", "library", "token-logger", "testdata", "claude-code", "normal.jsonl"))
+	fixture, err := os.ReadFile(filepath.Join("..", "testdata", "providers", "claude-code", "normal.jsonl"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -563,11 +563,11 @@ func TestRegistryForegroundSummaryAccumulatesAcrossReloadedCollectors(t *testing
 
 func TestWatchServeReloadsRegistryAndStopsCooperatively(t *testing.T) {
 	dataDir := t.TempDir()
-	codex, err := filepath.Abs(filepath.Join("..", "..", "library", "token-logger", "testdata", "codex"))
+	codex, err := filepath.Abs(filepath.Join("..", "testdata", "providers", "codex"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	claude, err := filepath.Abs(filepath.Join("..", "..", "library", "token-logger", "testdata", "claude-code"))
+	claude, err := filepath.Abs(filepath.Join("..", "testdata", "providers", "claude-code"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -647,7 +647,7 @@ func TestRegisteredSourceHealthUsesCollectorOutcomes(t *testing.T) {
 	dataDir := t.TempDir()
 	healthyRoot := t.TempDir()
 	degradedRoot := t.TempDir()
-	fixture, err := os.ReadFile(filepath.Join("..", "..", "library", "token-logger", "testdata", "claude-code", "normal.jsonl"))
+	fixture, err := os.ReadFile(filepath.Join("..", "testdata", "providers", "claude-code", "normal.jsonl"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -730,7 +730,7 @@ func TestInteractiveCollectorDoesNotDuplicateBackgroundLease(t *testing.T) {
 
 func TestImportJSONOutcomeContract(t *testing.T) {
 	dataDir := t.TempDir()
-	fixture := filepath.Join("..", "..", "library", "token-logger", "testdata", "codex", "normal.jsonl")
+	fixture := filepath.Join("..", "testdata", "providers", "codex", "normal.jsonl")
 	contents, err := os.ReadFile(fixture)
 	if err != nil {
 		t.Fatal(err)
@@ -864,7 +864,7 @@ func TestWatchDiscoveryFailureStopNeverClaimsComplete(t *testing.T) {
 
 func TestWatchInitialPollHonorsCancellation(t *testing.T) {
 	dataDir := t.TempDir()
-	fixture := filepath.Join("..", "..", "library", "token-logger", "testdata", "claude-code", "normal.jsonl")
+	fixture := filepath.Join("..", "testdata", "providers", "claude-code", "normal.jsonl")
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	var stdout, stderr bytes.Buffer
@@ -941,7 +941,7 @@ func TestCollectorStatusShowsFailureRecoveryAndFreshness(t *testing.T) {
 			t.Fatalf("degraded status omitted %q: %s", expected, degraded)
 		}
 	}
-	contents, err := os.ReadFile(filepath.Join("..", "..", "library", "token-logger", "testdata", "claude-code", "normal.jsonl"))
+	contents, err := os.ReadFile(filepath.Join("..", "testdata", "providers", "claude-code", "normal.jsonl"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -982,7 +982,7 @@ func TestImportFixtureMatchesHarnessCanonicalUsageProjection(t *testing.T) {
 	}{
 		{
 			name:    "codex",
-			fixture: filepath.Join("..", "..", "library", "token-logger", "testdata", "codex", "normal.jsonl"),
+			fixture: filepath.Join("..", "testdata", "providers", "codex", "normal.jsonl"),
 			events: []tokenlogger.UsageEvent{
 				canonicalDifferentialEvent("token-count-1", time.Date(2026, 10, 11, 10, 0, 2, 0, time.UTC), tokenlogger.TokenUsage{InputTokens: 100, OutputTokens: 30, CacheReadTokens: 20, ReasoningTokens: 10}, "project-fixture", "codex-session-fixture", "codex-cli", "openai", "gpt-5-codex"),
 				canonicalDifferentialEvent("token-count-2", time.Date(2026, 10, 11, 10, 0, 3, 0, time.UTC), tokenlogger.TokenUsage{InputTokens: 50, OutputTokens: 20, CacheReadTokens: 10, ReasoningTokens: 5}, "project-fixture", "codex-session-fixture", "codex-cli", "openai", "gpt-5-codex"),
@@ -990,7 +990,7 @@ func TestImportFixtureMatchesHarnessCanonicalUsageProjection(t *testing.T) {
 		},
 		{
 			name:    "codex token usage records",
-			fixture: filepath.Join("..", "..", "library", "token-logger", "testdata", "codex", "token-usage-records.jsonl"),
+			fixture: filepath.Join("..", "testdata", "providers", "codex", "token-usage-records.jsonl"),
 			events: []tokenlogger.UsageEvent{
 				canonicalDifferentialEvent("legacy-prefix", time.Date(2026, 10, 11, 10, 0, 1, 0, time.UTC), tokenlogger.TokenUsage{InputTokens: 100, OutputTokens: 10}, "record-project", "codex-record-session", "codex-cli", "openai", "gpt-5-codex"),
 				canonicalDifferentialEvent("record-response-1", time.Date(2026, 10, 11, 10, 0, 3, 0, time.UTC), tokenlogger.TokenUsage{InputTokens: 20, OutputTokens: 2, CacheReadTokens: 3, CacheWriteTokens: 4, ReasoningTokens: 1}, "record-project", "codex-record-session", "codex-cli", "openai", "gpt-5-codex"),
@@ -999,7 +999,7 @@ func TestImportFixtureMatchesHarnessCanonicalUsageProjection(t *testing.T) {
 		},
 		{
 			name:    "claude",
-			fixture: filepath.Join("..", "..", "library", "token-logger", "testdata", "claude-code", "normal.jsonl"),
+			fixture: filepath.Join("..", "testdata", "providers", "claude-code", "normal.jsonl"),
 			events: []tokenlogger.UsageEvent{
 				canonicalDifferentialEvent("claude-message-1", time.Date(2026, 10, 11, 11, 0, 1, 0, time.UTC), tokenlogger.TokenUsage{InputTokens: 110, OutputTokens: 15, CacheReadTokens: 20, CacheWriteTokens: 10}, "claude-project-fixture", "claude-session-fixture", "claude-code", "anthropic", "claude-sonnet-fixture"),
 				canonicalDifferentialEvent("claude-message-2", time.Date(2026, 10, 11, 11, 0, 2, 0, time.UTC), tokenlogger.TokenUsage{InputTokens: 45, OutputTokens: 8, CacheReadTokens: 5}, "claude-project-fixture", "claude-session-fixture", "claude-code", "anthropic", "claude-sonnet-fixture"),

@@ -331,7 +331,7 @@ func issue48SyntheticRoot(t *testing.T) (string, tokenlogger.CollectorRoot) {
 	t.Helper()
 	root := t.TempDir()
 	source := filepath.Join(root, "codex.jsonl")
-	fixture, err := os.ReadFile(filepath.Join("..", "..", "library", "token-logger", "testdata", "codex", "normal.jsonl"))
+	fixture, err := os.ReadFile(filepath.Join("..", "testdata", "providers", "codex", "normal.jsonl"))
 	if err != nil {
 		t.Fatal(err)
 	}

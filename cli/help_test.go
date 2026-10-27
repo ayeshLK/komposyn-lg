@@ -523,7 +523,7 @@ func withoutCandidate(values []string, target string) []string {
 func TestCLIReferenceMatchesPublicCommandsAndCurrentReleaseState(t *testing.T) {
 	read := func(name string) string {
 		t.Helper()
-		contents, err := os.ReadFile(filepath.Join("..", "..", "..", name))
+		contents, err := os.ReadFile(filepath.Join("..", name))
 		if err != nil {
 			t.Fatal(err)
 		}

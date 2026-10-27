@@ -251,7 +251,7 @@ func TestHarnessInitializeUsesSharedDefaultResolver(t *testing.T) {
 }
 
 func TestStoredDataSurfacesUseLegacyResolution(t *testing.T) {
-	fixture := filepath.Join("..", "..", "library", "token-logger", "testdata", "codex", "normal.jsonl")
+	fixture := filepath.Join("..", "testdata", "providers", "codex", "normal.jsonl")
 	surfaces := []string{"interactive", "import", "watch", "usage", "cost", "sessions", "settings", "diagnostics", "harness"}
 	for _, surface := range surfaces {
 		t.Run(surface, func(t *testing.T) {

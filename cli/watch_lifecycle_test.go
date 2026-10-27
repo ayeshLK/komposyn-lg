@@ -51,7 +51,7 @@ func (buffer *lifecycleBuffer) String() string {
 func lifecycleFixture(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
-	fixture, err := os.ReadFile(filepath.Join("..", "..", "library", "token-logger", "testdata", "codex", "normal.jsonl"))
+	fixture, err := os.ReadFile(filepath.Join("..", "testdata", "providers", "codex", "normal.jsonl"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +202,7 @@ func TestPositionalForegroundDeduplicatesOverlappingRoots(t *testing.T) {
 	if err := os.Mkdir(child, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	fixture, err := os.ReadFile(filepath.Join("..", "..", "library", "token-logger", "testdata", "codex", "normal.jsonl"))
+	fixture, err := os.ReadFile(filepath.Join("..", "testdata", "providers", "codex", "normal.jsonl"))
 	if err != nil {
 		t.Fatal(err)
 	}
