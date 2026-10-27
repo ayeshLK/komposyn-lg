@@ -24,6 +24,7 @@ import (
 type dataDirResolution struct {
 	Path    string
 	Warning string
+	Origin  appLogCode
 }
 
 func resolveDataDir(explicit string) (dataDirResolution, error) {
@@ -32,15 +33,19 @@ func resolveDataDir(explicit string) (dataDirResolution, error) {
 
 func resolveDataDirWith(explicit string, getenv func(string) string, homeDir func() (string, error)) (dataDirResolution, error) {
 	configured := explicit
+	origin := appLogCodeDataDirectoryExplicit
 	if configured == "" {
 		configured = getenv("TOKEN_LOGGER_DATA_DIR")
+		if configured != "" {
+			origin = appLogCodeDataDirectoryEnvironment
+		}
 	}
 	if configured != "" {
 		absolute, err := filepath.Abs(configured)
 		if err != nil {
 			return dataDirResolution{}, fmt.Errorf("resolve data directory %q: %w", configured, err)
 		}
-		return dataDirResolution{Path: absolute}, nil
+		return dataDirResolution{Path: absolute, Origin: origin}, nil
 	}
 
 	home, err := homeDir()
@@ -63,7 +68,7 @@ func resolveDataDirWith(explicit string, getenv func(string) string, homeDir fun
 		return dataDirResolution{}, fmt.Errorf("resolve legacy data directory %q: %w", legacy, err)
 	}
 	if legacy == current {
-		return dataDirResolution{Path: current}, nil
+		return dataDirResolution{Path: current, Origin: appLogCodeDataDirectoryCurrent}, nil
 	}
 	newState, err := hasOwnedData(current)
 	if err != nil {
@@ -74,12 +79,12 @@ func resolveDataDirWith(explicit string, getenv func(string) string, homeDir fun
 		return dataDirResolution{}, err
 	}
 	if newState && legacyState {
-		return dataDirResolution{Path: current, Warning: fmt.Sprintf("both %s and legacy data directory %s contain Komposyn data; no data was merged. To use the legacy data, set TOKEN_LOGGER_DATA_DIR=%s", current, legacy, legacy)}, nil
+		return dataDirResolution{Path: current, Warning: fmt.Sprintf("both %s and legacy data directory %s contain Komposyn data; no data was merged. To use the legacy data, set TOKEN_LOGGER_DATA_DIR=%s", current, legacy, legacy), Origin: appLogCodeDataDirectoryCurrent}, nil
 	}
 	if !newState && legacyState {
-		return dataDirResolution{Path: legacy}, nil
+		return dataDirResolution{Path: legacy, Origin: appLogCodeDataDirectoryLegacy}, nil
 	}
-	return dataDirResolution{Path: current}, nil
+	return dataDirResolution{Path: current, Origin: appLogCodeDataDirectoryCurrent}, nil
 }
 
 func hasOwnedData(dir string) (bool, error) {
