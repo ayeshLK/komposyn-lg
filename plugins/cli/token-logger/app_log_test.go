@@ -1331,13 +1331,31 @@ func TestSimultaneousREPLBackgroundAndShortCommandLogging(t *testing.T) {
 	}
 	records := decodeLogLines(t, contents)
 	seen := map[string]bool{}
+	workerRuns := map[string]map[string]bool{}
 	for _, record := range records {
 		seen[record["msg"].(string)] = true
+		if record["command"] == "watch" {
+			runID, _ := record["run_id"].(string)
+			if workerRuns[runID] == nil {
+				workerRuns[runID] = map[string]bool{}
+			}
+			workerRuns[runID][record["msg"].(string)] = true
+		}
 	}
 	for _, event := range []string{"process.started", "process.finished", "collector.started", "collector.stopped"} {
 		if !seen[event] {
 			t.Fatalf("shared log is missing %s event: %#v", event, records)
 		}
+	}
+	workerOwnsLogger := false
+	for _, events := range workerRuns {
+		if events["data_directory.resolved"] && events["collector.started"] && events["collector.stopped"] {
+			workerOwnsLogger = true
+			break
+		}
+	}
+	if !workerOwnsLogger {
+		t.Fatalf("detached worker did not record its own initialization and lifecycle under one run ID: %#v", records)
 	}
 }
 

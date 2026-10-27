@@ -66,10 +66,18 @@ type recordParams struct {
 type protocolServer struct {
 	store   *tokenlogger.Store
 	dataDir string
+	logger  applicationLog
 }
 
 func runProtocol(input io.Reader, stdout, stderr io.Writer) int {
-	server := &protocolServer{}
+	return runProtocolWithLogger(input, stdout, stderr, discardApplicationLog{})
+}
+
+func runProtocolWithLogger(input io.Reader, stdout, stderr io.Writer, logger applicationLog) int {
+	if logger == nil {
+		logger = discardApplicationLog{}
+	}
+	server := &protocolServer{logger: logger}
 	defer server.close()
 
 	encoder := json.NewEncoder(stdout)
@@ -146,14 +154,14 @@ func (s *protocolServer) initialize(request protocolRequest, stderr io.Writer) (
 			return errorResponse(request.ID, "invalid_params", "initialize params are invalid"), false
 		}
 	}
-	resolution, err := resolveDataDir(params.DataDir)
+	resolution, err := resolveDataDirWithLog(params.DataDir, s.logger, appCommandHarness)
 	if err != nil {
 		writeProtocolDiagnostic(stderr, fmt.Errorf("resolve token logger data directory: %w", err))
 		return errorResponse(request.ID, "initialize_failed", "could not resolve logger data directory; see harness diagnostics"), false
 	}
 	reportDataDirResolution(stderr, resolution)
 	params.DataDir = resolution.Path
-	store, err := tokenlogger.Open(filepath.Join(params.DataDir, "token-logger.db"))
+	store, err := openStoreWithLog(filepath.Join(params.DataDir, "token-logger.db"), s.logger, appCommandHarness)
 	if err != nil {
 		writeProtocolDiagnostic(stderr, fmt.Errorf("open logger store in %s: %w", params.DataDir, err))
 		return errorResponse(request.ID, "initialize_failed", "could not open logger store; see harness diagnostics"), false
@@ -222,6 +230,9 @@ func (s *protocolServer) record(request protocolRequest, stderr io.Writer) proto
 	}
 	receipt, err := s.store.AppendWithReferences([]tokenlogger.UsageEvent{params.Event}, projects, sessions)
 	if err != nil {
+		if s.logger != nil {
+			s.logger.Event(appLogCommandFailed, appLogCodeProtocolRecord, appCommandHarness, 2)
+		}
 		writeProtocolDiagnostic(stderr, err)
 		return errorResponse(request.ID, "record_failed", "could not persist usage event")
 	}

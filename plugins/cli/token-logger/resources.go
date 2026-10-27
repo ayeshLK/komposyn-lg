@@ -44,6 +44,10 @@ type sessionDetail struct {
 }
 
 func runProjectResources(args []string, stdout, stderr io.Writer) int {
+	return runProjectResourcesWithLogger(args, stdout, stderr, discardApplicationLog{})
+}
+
+func runProjectResourcesWithLogger(args []string, stdout, stderr io.Writer, logger applicationLog) int {
 	if len(args) == 0 || (args[0] != "list" && args[0] != "show" && args[0] != "inspect") {
 		fmt.Fprintln(stderr, "usage: komposyn-lg projects {list [options]|show <project-id> [options]|inspect <project-id> [options]}")
 		return 1
@@ -57,14 +61,14 @@ func runProjectResources(args []string, stdout, stderr io.Writer) int {
 		id, optionArgs = optionArgs[0], optionArgs[1:]
 	}
 	if action == "inspect" {
-		return runProjectInspection(id, optionArgs, stdout, stderr)
+		return runProjectInspectionWithLogger(id, optionArgs, stdout, stderr, logger)
 	}
 	options, err := parseResourceOptions(optionArgs, action == "list")
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	store, closeStore, ok := openResourceStore(options.dataDir, stderr)
+	store, closeStore, ok := openResourceStoreWithLogger(options.dataDir, stderr, logger, appCommandProjects)
 	if !ok {
 		return 2
 	}
@@ -72,6 +76,7 @@ func runProjectResources(args []string, stdout, stderr io.Writer) int {
 	if action == "show" {
 		project, err := store.ProjectResource(id, options.filter)
 		if err != nil {
+			logger.Event(appLogCommandFailed, appLogCodeReportQuery, appCommandProjects, 2)
 			fmt.Fprintf(stderr, "load project %q: %v\n", id, err)
 			return 2
 		}
@@ -84,6 +89,7 @@ func runProjectResources(args []string, stdout, stderr io.Writer) int {
 			err = writeProjectTable(stdout, []tokenlogger.ProjectResource{project})
 		}
 		if err != nil {
+			logger.Event(appLogCommandFailed, appLogCodeReportRender, appCommandProjects, 2)
 			fmt.Fprintf(stderr, "write project: %v\n", err)
 			return 2
 		}
@@ -91,10 +97,12 @@ func runProjectResources(args []string, stdout, stderr io.Writer) int {
 	}
 	list, err := store.ListProjects(options.filter)
 	if err != nil {
+		logger.Event(appLogCommandFailed, appLogCodeReportQuery, appCommandProjects, 2)
 		fmt.Fprintf(stderr, "list projects: %v\n", err)
 		return 2
 	}
 	if err := writeProjectResources(stdout, list, options.format); err != nil {
+		logger.Event(appLogCommandFailed, appLogCodeReportRender, appCommandProjects, 2)
 		fmt.Fprintf(stderr, "write projects: %v\n", err)
 		return 2
 	}
@@ -110,6 +118,10 @@ type projectInspectionOptions struct {
 }
 
 func runProjectInspection(id string, args []string, stdout, stderr io.Writer) int {
+	return runProjectInspectionWithLogger(id, args, stdout, stderr, discardApplicationLog{})
+}
+
+func runProjectInspectionWithLogger(id string, args []string, stdout, stderr io.Writer, logger applicationLog) int {
 	now := time.Now().UTC()
 	options := projectInspectionOptions{
 		format: "text", limit: tokenlogger.DefaultInspectionPageSize,
@@ -175,7 +187,7 @@ func runProjectInspection(id string, args []string, stdout, stderr io.Writer) in
 		fmt.Fprintf(stderr, "inspection offset must be between 0 and %d\n", tokenlogger.MaxInspectionOffset)
 		return 1
 	}
-	store, closeStore, ok := openResourceStore(options.dataDir, stderr)
+	store, closeStore, ok := openResourceStoreWithLogger(options.dataDir, stderr, logger, appCommandProjects)
 	if !ok {
 		return 2
 	}
@@ -185,6 +197,7 @@ func runProjectInspection(id string, args []string, stdout, stderr io.Writer) in
 		Limit: options.limit, Offset: options.offset,
 	})
 	if err != nil {
+		logger.Event(appLogCommandFailed, appLogCodeReportQuery, appCommandProjects, 2)
 		fmt.Fprintf(stderr, "inspect project: %v\n", err)
 		return 2
 	}
@@ -198,6 +211,7 @@ func runProjectInspection(id string, args []string, stdout, stderr io.Writer) in
 		err = writeProjectInspectionText(stdout, inspection)
 	}
 	if err != nil {
+		logger.Event(appLogCommandFailed, appLogCodeReportRender, appCommandProjects, 2)
 		fmt.Fprintf(stderr, "write project inspection: %v\n", err)
 		return 2
 	}
@@ -363,6 +377,10 @@ func valueOrZero(value *int64) int64 {
 func valueOrFalse(value *bool) bool { return value != nil && *value }
 
 func runSessionResources(args []string, stdout, stderr io.Writer) int {
+	return runSessionResourcesWithLogger(args, stdout, stderr, discardApplicationLog{})
+}
+
+func runSessionResourcesWithLogger(args []string, stdout, stderr io.Writer, logger applicationLog) int {
 	action := args[0]
 	id, optionArgs := "", args[1:]
 	if action == "show" {
@@ -381,7 +399,7 @@ func runSessionResources(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "sessions list requires --project <project-id>")
 		return 1
 	}
-	store, closeStore, ok := openResourceStore(options.dataDir, stderr)
+	store, closeStore, ok := openResourceStoreWithLogger(options.dataDir, stderr, logger, appCommandSessions)
 	if !ok {
 		return 2
 	}
@@ -389,6 +407,7 @@ func runSessionResources(args []string, stdout, stderr io.Writer) int {
 	if action == "show" {
 		session, err := store.SessionResource(id, options.projectID, options.filter)
 		if err != nil {
+			logger.Event(appLogCommandFailed, appLogCodeReportQuery, appCommandSessions, 2)
 			fmt.Fprintf(stderr, "load session %q: %v\n", id, err)
 			return 2
 		}
@@ -401,6 +420,7 @@ func runSessionResources(args []string, stdout, stderr io.Writer) int {
 		}
 		report, err := store.Query(usageFilter)
 		if err != nil {
+			logger.Event(appLogCommandFailed, appLogCodeReportQuery, appCommandSessions, 2)
 			fmt.Fprintf(stderr, "query session usage: %v\n", err)
 			return 2
 		}
@@ -415,6 +435,7 @@ func runSessionResources(args []string, stdout, stderr io.Writer) int {
 			}
 		}
 		if err != nil {
+			logger.Event(appLogCommandFailed, appLogCodeReportRender, appCommandSessions, 2)
 			fmt.Fprintf(stderr, "write session: %v\n", err)
 			return 2
 		}
@@ -422,10 +443,12 @@ func runSessionResources(args []string, stdout, stderr io.Writer) int {
 	}
 	list, err := store.ListSessions(options.projectID, options.filter)
 	if err != nil {
+		logger.Event(appLogCommandFailed, appLogCodeReportQuery, appCommandSessions, 2)
 		fmt.Fprintf(stderr, "list sessions: %v\n", err)
 		return 2
 	}
 	if err := writeSessionResources(stdout, list, options.format); err != nil {
+		logger.Event(appLogCommandFailed, appLogCodeReportRender, appCommandSessions, 2)
 		fmt.Fprintf(stderr, "write sessions: %v\n", err)
 		return 2
 	}
@@ -483,13 +506,17 @@ func parseResourceOptions(args []string, csvAllowed bool) (resourceOptions, erro
 }
 
 func openResourceStore(dataDir string, stderr io.Writer) (*tokenlogger.Store, func(), bool) {
-	resolution, err := resolveDataDir(dataDir)
+	return openResourceStoreWithLogger(dataDir, stderr, discardApplicationLog{}, appCommandOther)
+}
+
+func openResourceStoreWithLogger(dataDir string, stderr io.Writer, logger applicationLog, command appCommand) (*tokenlogger.Store, func(), bool) {
+	resolution, err := resolveDataDirWithLog(dataDir, logger, command)
 	if err != nil {
 		fmt.Fprintf(stderr, "resolve token logger data directory: %v\n", err)
 		return nil, nil, false
 	}
 	reportDataDirResolution(stderr, resolution)
-	store, err := tokenlogger.Open(filepath.Join(resolution.Path, "token-logger.db"))
+	store, err := openStoreWithLog(filepath.Join(resolution.Path, "token-logger.db"), logger, command)
 	if err != nil {
 		fmt.Fprintf(stderr, "open token logger database in %s: %v\n", resolution.Path, err)
 		return nil, nil, false

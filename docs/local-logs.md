@@ -35,8 +35,10 @@ and dropped event counts. No raw command arguments, error strings, environment
 values, data-directory paths, provider paths, project/session names, source
 records, prompts, or responses are accepted by the logging interface.
 
-The CLI records process start/finish and selected collector start/stop/failure
-transitions. It does not record successful per-record imports. Repeated events
+The CLI records process start/finish, data-directory resolution origin,
+settings persistence, controlled command failures, and collector lifecycle,
+health, and bounded outcome summaries. It does not record successful
+per-record imports. Repeated events
 are suppressed for a short window and summarized; a full queue drops events
 without blocking command execution and reports counts when possible. If a
 detached collector cannot initialize or write its log, it records the fixed
@@ -46,6 +48,14 @@ when its database is available. This does not send a report or grant consent.
 Logs and their process/run identifiers are local troubleshooting data. Review
 them before sharing; they are not automatically safe to publish or attach to
 an issue.
+
+The [event and code catalogue](issue-57-cli-logging-coverage.md) defines the
+format-version-1 event names, controlled codes, and latest-poll versus
+run-cumulative counter scopes. With the currently pinned core v0.9.0, source
+and parser causes unavailable from the public API remain generic. Rich typed
+core events depend on core #163 and a reviewed published core release; the CLI
+does not infer causes from error strings. A log event is best-effort evidence,
+not an atomic outbox, an exactly-once stream, or an accounting authority.
 
 ## Size, rotation, and recovery
 

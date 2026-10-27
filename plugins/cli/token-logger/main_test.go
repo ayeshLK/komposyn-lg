@@ -336,6 +336,15 @@ func TestPollWithLeaseHeartbeatHonorsStopRequest(t *testing.T) {
 		if !result.stop || result.heartbeatErr != nil || !errors.Is(result.pollErr, context.Canceled) || poller.laterStarted {
 			t.Fatalf("poll result=%+v later_started=%t", result, poller.laterStarted)
 		}
+		logger := &recordingApplicationLog{}
+		active := false
+		var pollStderr bytes.Buffer
+		if shouldReport := logPollFailureEpisode(logger, appCommandWatch, context.Background(), result.pollErr, result.heartbeatErr, result.stop, &active); shouldReport {
+			fmt.Fprintf(&pollStderr, "collector poll: %v\n", result.pollErr)
+		}
+		if len(logger.events) != 0 || pollStderr.Len() != 0 {
+			t.Fatalf("cooperative stop reported as a poll failure: events=%+v stderr=%q", logger.events, pollStderr.String())
+		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("stop request did not cancel the active poll")
 	}
