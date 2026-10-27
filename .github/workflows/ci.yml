@@ -51,7 +51,7 @@ jobs:
         shell: pwsh
         run: |
           $binary = Join-Path $env:RUNNER_TEMP 'komposyn-lg.exe'
-          go build -o $binary ./plugins/cli/token-logger
+          go build -o $binary ./cli
           $env:KOMPOSYN_LG_TEST_BINARY = $binary
           python scripts/test-measure-collector.py
       - name: Test resource measurement harness

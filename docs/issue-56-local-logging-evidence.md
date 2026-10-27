@@ -5,6 +5,11 @@ bounded local JSONL logger, including the production collector comparison
 added for issue #56. It is not a release-readiness claim or a benchmark of
 customer workloads.
 
+The source paths and reproduction commands below record the layout used by
+the measured revisions. The current source is in [`cli/`](../cli/); the Codex
+fixture is now [`testdata/providers/codex/normal.jsonl`](../testdata/providers/codex/normal.jsonl)
+with the same recorded bytes and SHA-256.
+
 ## Reproduction
 
 At the time of measurement, the dedicated branch was based on CLI commit
@@ -93,7 +98,7 @@ core tag `v0.9.0`. The candidate tag resolves to
 `2a453be90ec1838857a1fff30d2e82ed29732223`; the module checksum is
 `h1:ShU1UkFxkZ7tECF8ozo9YfipD91M3XR0DkilK4QbtBU=`. Its `go.mod` declares Go
 1.25. The optional Linux-only harness is
-[`app_log_queue_compare_test.go`](../plugins/cli/token-logger/app_log_queue_compare_test.go),
+[`app_log_queue_compare_test.go`](../cli/app_log_queue_compare_test.go),
 SHA-256 `b7f374a8a2193c3526a9f3cbdcf722c66192d83967898723a1b663668f57271d`.
 It is excluded from ordinary builds and uses no production dependency change.
 
@@ -202,7 +207,7 @@ queue.
 ## Production collector resource comparison
 
 The opt-in Linux harness
-[`app_log_resource_linux_test.go`](../plugins/cli/token-logger/app_log_resource_linux_test.go)
+[`app_log_resource_linux_test.go`](../cli/app_log_resource_linux_test.go)
 compares the production foreground collector with its production `eventLogger`
 enabled and with `discardApplicationLog`. It runs each sample in a separate
 test-binary process, serially. Each of three repetitions covers both workloads

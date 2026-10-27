@@ -13,7 +13,7 @@ test:
 	go test ./...
 
 build:
-	go build -o bin/komposyn-lg ./plugins/cli/token-logger
+	go build -o bin/komposyn-lg ./cli
 
 installer-trust:
 	bash scripts/test-installer-trust.sh

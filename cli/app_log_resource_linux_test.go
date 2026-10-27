@@ -340,7 +340,7 @@ func runIssue56ResourceSample(t *testing.T, root, scenario string, sources []str
 
 func issue56ResourceSources(t *testing.T, dir string, count int) []string {
 	t.Helper()
-	fixture, err := os.ReadFile(filepath.Join("..", "..", "library", "token-logger", "testdata", "codex", "normal.jsonl"))
+	fixture, err := os.ReadFile(filepath.Join("..", "testdata", "providers", "codex", "normal.jsonl"))
 	if err != nil {
 		t.Fatal(err)
 	}

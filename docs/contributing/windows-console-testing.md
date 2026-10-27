@@ -24,7 +24,7 @@ $hadTokenLoggerDataDir = Test-Path Env:TOKEN_LOGGER_DATA_DIR
 $previousTokenLoggerDataDir = $env:TOKEN_LOGGER_DATA_DIR
 try {
     New-Item -ItemType Directory -Force .\bin | Out-Null
-    go build -o .\bin\komposyn-lg.exe .\plugins\cli\token-logger
+    go build -o .\bin\komposyn-lg.exe .\cli
     $exe = (Resolve-Path .\bin\komposyn-lg.exe).Path
     $dataDir = Join-Path $env:TEMP ("komposyn-console-test-" + [guid]::NewGuid().ToString("N"))
     New-Item -ItemType Directory -Path $dataDir | Out-Null

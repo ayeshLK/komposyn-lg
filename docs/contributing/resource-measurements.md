@@ -20,7 +20,7 @@ python3 scripts/test-measure-collector.py
 ```
 
 ```sh
-go build -o /tmp/komposyn-lg-measure ./plugins/cli/token-logger
+go build -o /tmp/komposyn-lg-measure ./cli
 python3 scripts/measure-collector.py --binary /tmp/komposyn-lg-measure --scenario unchanged --duration 120s --warmup 15s --artifacts /tmp/measure-unchanged
 ```
 

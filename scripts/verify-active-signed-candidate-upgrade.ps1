@@ -80,7 +80,7 @@ try {
     Expand-Archive -LiteralPath (Join-Path $oldDir $oldAsset) -DestinationPath $oldDir
     Copy-Item -LiteralPath (Join-Path $oldDir 'komposyn-lg.exe') -Destination $binary
 
-    $fixture = Join-Path $PSScriptRoot '..\plugins\library\token-logger\testdata\codex\normal.jsonl'
+    $fixture = Join-Path $PSScriptRoot '..\testdata\providers\codex\normal.jsonl'
     Copy-Item -LiteralPath $fixture -Destination (Join-Path $sourceDir 'normal.jsonl')
     $env:TOKEN_LOGGER_DATA_DIR = $dataDir
     Invoke-CLI @('settings','--collector','off','--auto-start','off') | Out-Null
