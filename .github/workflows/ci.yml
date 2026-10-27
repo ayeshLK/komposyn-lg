@@ -70,7 +70,7 @@ jobs:
       - name: Test
         run: go test ./...
       - name: Build
-        run: go build ./...
+        run: go build -o komposyn-lg-ci-build ./cli
   race:
     runs-on: ubuntu-latest
     steps:
