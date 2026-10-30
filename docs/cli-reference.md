@@ -1,7 +1,7 @@
 # CLI reference
 
-The executable is `komposyn-lg`. Run `komposyn-lg version` to print the CLI
-version and the reusable core version embedded in this build.
+The executable is `komposyn-lg`. Run `komposyn-lg version` to print this
+executable's version and the reusable core version embedded in this build.
 
 ## Data directory
 
@@ -300,6 +300,37 @@ controls. The archive contains `diagnostics.json`; it does not include provider
 transcripts, prompts, responses, credentials, or source files. This command
 performs no network request and does not mark diagnostics as reviewed.
 
+### `diagnostics list`, `show`, and `review`
+
+```text
+komposyn-lg diagnostics list [--review-state pending|reviewed|skipped]
+  [--condition active|resolved|unknown] [--category <code>] [--reason <code>]
+  [--subject-reference <opaque-ref>] [--page-size <1-100>]
+  [--continuation <token>] [--data-dir <path>] [--format text|json]
+komposyn-lg diagnostics show <problem-id> [--data-dir <path>] [--format text|json]
+komposyn-lg diagnostics review <problem-id> --state reviewed|skipped --expected-revision <revision> [--data-dir <path>]
+```
+
+These commands query persisted core diagnostic details; they do not scan
+provider files, start collection, repair data, or use the network. `list`
+delegates filtering and bounded pagination to core (default page size 20,
+maximum 100). Continue with its `next_token` using the same filters and page
+size. JSON is the versioned core response, preserving exact counter decimal
+strings, saturation/truncation, unavailable evidence and separate
+latest-poll/latest-observed-run/lifetime scopes. Older legacy fingerprints
+are not detailed problem IDs. `show` displays the core's privacy-filtered
+projection. `review` uses core compare-and-set; a conflict requires re-reading
+the detail. Review state is separate from active/resolved/unknown condition
+and does not imply repair or export consent.
+
+Opening the store can perform normal schema migration and pricing-catalog
+synchronization. Thus diagnostic queries are read-only once the store is open,
+but the full command invocation may have those existing `Store.Open` effects.
+Digits, opaque references, timestamps, and exact metrics may identify local
+data; neither text nor JSON is automatically safe to publish. See
+[diagnostic inspection and reviewed export](diagnostic-inspection-contract.md)
+and [backups](backups.md) before sharing or upgrading existing data.
+
 ### `logs show`
 
 ```text
@@ -389,6 +420,21 @@ selection snapshot. Stable IDs can still be supplied directly for project and
 session selection. Project, session, and model navigation tables use compact
 decimal token counts consistently; use the corresponding JSON or CSV resource
 commands when exact integers are required.
+
+Persisted diagnostic details can be inspected or reviewed without changing
+the current report range or navigation:
+
+```text
+/diagnostics [list]
+/diagnostics show <problem-id>
+/diagnostics review <problem-id> <reviewed|skipped>
+```
+
+List uses one bounded page and prints the continuation token for a subsequent
+noninteractive `diagnostics list --continuation <token>` request. Review is a
+local compare-and-set action and does not mean the operational condition was
+resolved or consent to export. These commands use the already-open store; its
+normal migration/catalog synchronization behavior still applies.
 
 Use `/range` to show the mode and effective UTC bounds. `/range <from> <to>`
 pins an explicit half-open range (accepting ISO-8601 dates or timestamps),
