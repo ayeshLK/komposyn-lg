@@ -172,6 +172,8 @@ func runWithInputAndLogger(args []string, input io.Reader, stdout, stderr io.Wri
 		return runSettingsWithLogger(args[1:], stdout, stderr, logger)
 	case "report-issue":
 		return runReportIssueWithLogger(args[1:], stdout, stderr, logger)
+	case "diagnostics":
+		return runDiagnosticDetails(args[1:], stdout, stderr, logger)
 	case "logs":
 		return runLogs(args[1:], stdout, stderr, os.Getenv("TOKEN_LOGGER_LOG_DIR"), os.UserHomeDir)
 	default:
@@ -312,7 +314,7 @@ func startInteractiveCollectorWithLogger(store *tokenlogger.Store, roots []token
 		return nil, err
 	}
 	if err := store.BeginCollectorPoll(instance, len(roots)); err != nil {
-		logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandInteractive, 2)
+		logger.CoreFailure(err, appLogCollectorFailed, appLogCodeCollectorStore, appCommandInteractive, 2)
 		if releaseErr := store.ReleaseCollectorLease(instance, "failed", err.Error()); releaseErr != nil {
 			logger.CoreFailure(releaseErr, appLogCollectorFailed, appLogCodeCollectorRelease, appCommandInteractive, 2)
 		}
@@ -356,7 +358,7 @@ func startInteractiveCollectorWithLogger(store *tokenlogger.Store, roots []token
 			logPollFailureEpisode(logger, appCommandInteractive, ctx, pollErr, nil, false, &pollFailureActive)
 			health := collector.Health()
 			if err := store.CompleteCollectorPoll(instance, result, health, pollErr); err != nil {
-				logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandInteractive, 2)
+				logger.CoreFailure(err, appLogCollectorFailed, appLogCodeCollectorStore, appCommandInteractive, 2)
 				return
 			}
 			runHealth = accumulateWatchHealth(runHealth, result, health)
@@ -828,6 +830,15 @@ func runInteractiveLoopWithClockAndRootsAndLogger(reader interactiveLineReader, 
 			if interactiveRenderWithLogger(stdout, stderr, store, &state, reader, now, logger) {
 				return 0
 			}
+		case "/diagnostics":
+			args := strings.Fields(selector)
+			if len(args) == 0 {
+				args = []string{"list"}
+			}
+			if len(args) >= 3 && args[0] == "review" && !strings.HasPrefix(args[2], "--") {
+				args = append([]string{"review", args[1], "--state", args[2]}, args[3:]...)
+			}
+			_ = runDiagnosticDetailsForStore(args, stdout, stderr, logger, store)
 		case "/project":
 			if selector == "" {
 				fmt.Fprintln(stdout, "usage: /project <row-number|unambiguous-name|stable-id>")
@@ -1392,6 +1403,10 @@ Reports
 Session
   /status                    Versions, data directory, collector, last report query
   /settings                  Saved preferences and current runtime information
+  /diagnostics [list]        List bounded diagnostic details
+  /diagnostics show <id>     Inspect a detailed problem ID
+  /diagnostics review <id> <reviewed|skipped> --expected-revision <revision>
+                              Mark the evidence revision you inspected
   /report-issue              Inspect pending local diagnostics
   /clear                     Clear the visible terminal
   /help                      Show these commands

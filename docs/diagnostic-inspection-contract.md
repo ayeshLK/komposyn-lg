@@ -1,20 +1,21 @@
 # Diagnostic inspection and reviewed export contract
 
-CLI issue #58 has two delivery increments. Core #112 and #163 are complete and
-their public APIs are available in published core v0.10.0. The current CLI
-dependency prerequisite pins that version; the CLI inspection, review, and
-export work remains outstanding. The CLI must not use direct diagnostic SQL,
-copy core summary logic, or commit a temporary module replacement.
+Core #112 and #163 are complete and their public APIs are available in
+published core v0.10.0. The CLI inspection/review increment is implemented by
+`diagnostics list|show|review`; the separately reviewed export workflow is
+tracked independently. The CLI must not use direct diagnostic SQL, copy core
+summary logic, or commit a temporary module replacement.
 
 ## Core-owned inspection and review
 
-The CLI will provide list, show, and review operations through
+The CLI provides list, show, and review operations through
 `Store.ListDiagnosticDetails`, `Store.InspectDiagnosticDetail`, and
 `Store.ReviewDiagnosticDetail`, delegating queries, aggregation, pagination,
 and review compare-and-set to core. The contract must preserve:
 
-- The existing diagnostic fingerprint and historical metadata. Generic
-  legacy rows keep provenance and detail explicitly unavailable.
+- Detailed operations use the core problem ID. Legacy fingerprints remain
+  separate; old diagnostics without a detail projection are not recast as
+  detailed source identities. Unavailable legacy evidence stays explicit.
 - Operational status separately from whether a person reviewed the item.
 - Latest-poll, latest-run, and lifetime counts as separate core-provided
   observations. A skipped or unobserved source cannot be described as resolved.
@@ -29,7 +30,14 @@ and distinct latest-poll, latest-observed-run, and lifetime scopes. A bounded
 64-ID replay window may count an evicted replay again and marks projected
 counters truncated. Opening the normal store may perform migrations or
 catalog synchronization; diagnostic commands must disclose those `Store.Open`
-side effects and must not be described as strictly read-only.
+side effects and must not be described as strictly read-only. `diagnostics
+list` returns one bounded core page; use `next_token` as `--continuation` with
+the same page size and filters. Core binds continuation to that query. Human
+output prints a continuation token; JSON preserves the versioned core page.
+`show` exposes only core's bounded projection. `review` requires the expected
+evidence revision displayed by list/show, uses core compare-and-set, and
+accepts only reviewed/skipped changes; review state remains distinct from
+active/resolved/unknown condition.
 
 ## Reviewed export
 
