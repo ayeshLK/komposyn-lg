@@ -1,5 +1,11 @@
 # Issue #57 CLI logging coverage
 
+> **Current status (2026-10-30).** The measurements and baseline coverage
+> below were recorded against core v0.9.0 and remain historical evidence.
+> Core #163 is now complete and its observer/typed-error APIs are published in
+> core v0.10.0. CLI increment B is the remaining integration work; the text
+> below records the state and claims at the time of the original audit.
+
 This matrix records baseline increment A on current CLI master based at
 `2365e07062ceb3d1b688fd15d6cf588f28da1227` (after merged PR #60), with the
 published core v0.9.0 dependency. The CLI owns the bounded local

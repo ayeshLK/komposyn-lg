@@ -4,7 +4,7 @@ set -euo pipefail
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 resolver="$root_dir/scripts/resolve-core-version.sh"
 release_resolver="$root_dir/scripts/resolve-release-core-version.sh"
-expected_version='v0.9.0'
+expected_version='v0.10.0'
 
 python3 - "$root_dir/release-please-config.json" <<'PY'
 import json
@@ -35,7 +35,7 @@ module example.com/provenance-fixture
 
 go 1.26.0
 
-require github.com/ayeshLK/komposyn v0.9.0
+require github.com/ayeshLK/komposyn v0.10.0
 
 replace github.com/ayeshLK/komposyn => ./core
 EOF
@@ -58,7 +58,7 @@ module example.com/provenance-fixture
 
 go 1.26.0
 
-require github.com/ayeshLK/komposyn v0.9.0
+require github.com/ayeshLK/komposyn v0.10.0
 EOF
 cat > "$fixture/go.work" <<'EOF'
 go 1.26.0

@@ -1,16 +1,17 @@
 # Diagnostic inspection and reviewed export contract
 
-CLI issue #58 has two delivery increments. B remains outstanding until core
-publishes the persisted diagnostic query/review APIs from core #112. Core #112
-and structured-event issue #163 are open; the latest core release is `v0.9.0`
-and does not provide these APIs. The CLI must not use direct diagnostic SQL,
+CLI issue #58 has two delivery increments. Core #112 and #163 are complete and
+their public APIs are available in published core v0.10.0. The current CLI
+dependency prerequisite pins that version; the CLI inspection, review, and
+export work remains outstanding. The CLI must not use direct diagnostic SQL,
 copy core summary logic, or commit a temporary module replacement.
 
 ## Core-owned inspection and review
 
-Once a released core API is available, the CLI will provide list, show, and
-review operations by delegating queries and local state changes to core. The
-contract must preserve:
+The CLI will provide list, show, and review operations through
+`Store.ListDiagnosticDetails`, `Store.InspectDiagnosticDetail`, and
+`Store.ReviewDiagnosticDetail`, delegating queries, aggregation, pagination,
+and review compare-and-set to core. The contract must preserve:
 
 - The existing diagnostic fingerprint and historical metadata. Generic
   legacy rows keep provenance and detail explicitly unavailable.
@@ -22,12 +23,13 @@ contract must preserve:
 - Review as a local action only. Review does not transmit anything and does
   not imply that the underlying condition was corrected.
 
-The CLI will consume only a tagged core release that exposes these semantics.
-Exact Go symbols and field mappings will follow the released public API; this
-document deliberately does not invent them. Opening the normal store may
-perform the core's existing migrations or catalog synchronization. Diagnostic
-commands will document those `Store.Open` side effects and will not be
-described as strictly read-only.
+The CLI consumes the published v0.10.0 core contract. Core contract version 1
+preserves exact uint64 counters as decimal strings, saturation and truncation,
+and distinct latest-poll, latest-observed-run, and lifetime scopes. A bounded
+64-ID replay window may count an evicted replay again and marks projected
+counters truncated. Opening the normal store may perform migrations or
+catalog synchronization; diagnostic commands must disclose those `Store.Open`
+side effects and must not be described as strictly read-only.
 
 ## Reviewed export
 

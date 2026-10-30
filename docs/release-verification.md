@@ -3,10 +3,12 @@
 Release Please prepares the standalone CLI version and changelog in a reviewed
 pull request. CLI and core versions advance independently: the release builder
 uses the requested CLI tag for `cli_version` and the exact pinned core module
-version for core `plugin_version`. The current published CLI is v0.10.0 and
-pins the published core v0.9.0; that is also the minimum supported core
-version. Core v0.8.0 migrated schema 15 to 16, and core v0.9.0 migrated 16 to
-17 with recorded project-name origin. The version map and historical schema
+version for core `plugin_version`. The latest published CLI is v0.10.0 and
+pins core v0.9.0 (schema 17). The current development source pins published
+core v0.10.0, setting the minimum core floor for the next CLI release; core
+v0.10.0 migrates schema 17 to 18 with persisted diagnostic details. Core
+v0.8.0 migrated schema 15 to 16, and core v0.9.0 migrated 16 to 17 with
+recorded project-name origin. The version map and historical schema
 compatibility are in [core compatibility](core-compatibility-security.md).
 
 The release preparation job resolves the expected core version from the exact

@@ -18,5 +18,5 @@ set -euo pipefail
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # The release builder supports only the reviewed core release currently pinned
 # by this CLI source. Keep this policy in one place for build and verification.
-resolved="$(bash "$root_dir/scripts/resolve-core-version.sh" github.com/ayeshLK/komposyn v0.9.0)"
+resolved="$(bash "$root_dir/scripts/resolve-core-version.sh" github.com/ayeshLK/komposyn v0.10.0)"
 printf '%s\n' "${resolved#v}"
