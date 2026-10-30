@@ -213,6 +213,55 @@ func TestDiagnosticExportPreservesExactCountsAndRejectsUnknownValues(t *testing.
 	}
 }
 
+func TestDiagnosticExportAcceptsWriterUnavailableEvidenceReason(t *testing.T) {
+	dir := t.TempDir()
+	logger, err := newEventLogger(dir, "0.11.0-dev", tokenlogger.CoreVersion(), os.Getpid(), "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := openStoreWithLog("", logger, appCommandImport); err == nil {
+		t.Fatal("empty database path unexpectedly opened")
+	}
+	logger.Close()
+
+	read, err := readManagedLogs(dir, logReadOptions{Limit: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var selected *logReadRecord
+	for i := range read.Records {
+		if read.Records[i].Event == "core.diagnostic" {
+			selected = &read.Records[i]
+			break
+		}
+	}
+	if selected == nil {
+		t.Fatalf("production core failure event missing: %+v", read.Records)
+	}
+	if got := selected.CoreDetails["core_evidence_unavailable_reason"]; got != string(tokenlogger.DiagnosticUnavailableNotCollected) {
+		t.Fatalf("writer unavailable reason = %q", got)
+	}
+
+	projections, err := selectManagedLogExports(read, []logRecordRef{logRef(*selected)})
+	if err != nil || len(projections) != 1 {
+		t.Fatalf("managed selection failed: projections=%+v err=%v", projections, err)
+	}
+	exported, err := projectSelectedLogForExport(projections[0])
+	if err != nil || exported.Core["core_evidence_unavailable_reason"] != string(tokenlogger.DiagnosticUnavailableNotCollected) {
+		t.Fatalf("selected writer event was not exportable: %+v err=%v", exported, err)
+	}
+
+	fields := map[string]string{
+		"core_contract_version": "1", "core_kind": "operation_failed",
+		"core_evidence_scope": "operation", "core_evidence_availability": "not_collected",
+		"core_evidence_unavailable_reason": "future_reason",
+		"core_counts_scope":                "operation", "core_counts_availability": "not_collected",
+	}
+	if _, err := projectExportCoreLogFields(fields); err == nil {
+		t.Fatal("unknown unavailable-evidence reason was accepted")
+	}
+}
+
 func TestDiagnosticExportRejectsUnknownContractAndPrivateRouting(t *testing.T) {
 	store, problemID := seedExportDiagnostic(t)
 	defer store.Close()
