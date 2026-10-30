@@ -271,8 +271,8 @@ new_schema = read(sys.argv[1], "SELECT MAX(version) FROM schema_migrations")[0]
 backup_integrity = read(sys.argv[2], "PRAGMA integrity_check")[0]
 source, target = read(sys.argv[2], "SELECT source_schema,target_schema FROM komposyn_migration_backup")
 backup_schema = read(sys.argv[2], "SELECT MAX(version) FROM schema_migrations")[0]
-if (new_schema, backup_integrity, source, target, backup_schema) != (17, "ok", 15, 17, 15):
-    raise SystemExit(f"schema-15-to-17 backup mismatch: {(new_schema, backup_integrity, source, target, backup_schema)!r}")
+if (new_schema, backup_integrity, source, target, backup_schema) != (18, "ok", 15, 18, 15):
+    raise SystemExit(f"schema-15-to-18 backup mismatch: {(new_schema, backup_integrity, source, target, backup_schema)!r}")
 PY
 fi
 backup_digest="$("$sha_tool" "$backup" | awk '{print $1}')"
@@ -302,7 +302,7 @@ for suffix in ("", "-wal", "-shm"):
 PY
 )"
 	if TOKEN_LOGGER_DATA_DIR="$data_dir" "$old_dir/komposyn-lg" usage --format json >"$tmp_dir/old-schema-refusal.txt" 2>&1; then
-		echo 'signed CLI v0.8.1 unexpectedly opened the migrated schema-17 database' >&2
+		echo 'signed CLI v0.8.1 unexpectedly opened the migrated schema-18 database' >&2
 		exit 1
 	fi
 	grep -Fq 'newer than supported version' "$tmp_dir/old-schema-refusal.txt" || {
@@ -320,7 +320,7 @@ for suffix in ("", "-wal", "-shm"):
 PY
 )"
 	[[ "$refusal_after" == "$refusal_before" ]] || {
-		echo "signed CLI v0.8.1 refusal mutated schema-17 database/sidecars: before=$refusal_before after=$refusal_after" >&2
+		echo "signed CLI v0.8.1 refusal mutated schema-18 database/sidecars: before=$refusal_before after=$refusal_after" >&2
 		exit 1
 	}
 fi

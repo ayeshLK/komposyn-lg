@@ -75,6 +75,39 @@ func TestReadManagedLogsFiltersAndUsesDeterministicFileOrder(t *testing.T) {
 	}
 }
 
+func TestSelectedLogExportProjectionRequiresParsedRowsAndOmitsLocalIdentity(t *testing.T) {
+	record := logReadRecord{
+		Time: "2026-10-30T10:00:00.123456789Z", Level: "WARN", Event: "core.diagnostic_loss",
+		CLI: "0.11.0", Core: "0.10.0", PID: 732, RunID: "0123456789abcdef0123456789abcdef",
+		Command: "watch", Code: "core_observer_loss", Count: func() *uint64 { value := uint64(4); return &value }(),
+		File: "klg.log.1", fileRank: 1, lineOrder: 8,
+	}
+	result := logReadResult{Records: []logReadRecord{record}}
+	ref := logRef(record)
+	projections, err := selectManagedLogExports(result, []logRecordRef{ref})
+	if err != nil || len(projections) != 1 {
+		t.Fatalf("selected parsed row was rejected: projections=%+v err=%v", projections, err)
+	}
+	encoded, err := json.Marshal(projections)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, localOnly := range []string{record.Time, record.RunID, "732", "klg.log.1", "fileRank", "LineOrder"} {
+		if strings.Contains(string(encoded), localOnly) {
+			t.Fatalf("local-only identifier %q appeared in export projection: %s", localOnly, encoded)
+		}
+	}
+	if _, err := selectManagedLogExports(result, []logRecordRef{{File: "klg.log", FileRank: 0, LineOrder: 1}}); err == nil {
+		t.Fatal("fabricated selection was accepted")
+	}
+	if _, err := selectManagedLogExports(result, []logRecordRef{ref, ref}); err == nil {
+		t.Fatal("duplicate selection was accepted")
+	}
+	if _, err := selectManagedLogExports(result, nil); err == nil {
+		t.Fatal("implicit all-logs selection was accepted")
+	}
+}
+
 func TestReadManagedLogsReportsCorruptUnsupportedOversizedAndPartialEntries(t *testing.T) {
 	dir := t.TempDir()
 	content := syntheticLogLine("2026-10-20T10:00:00Z", "INFO", "process.started", "")

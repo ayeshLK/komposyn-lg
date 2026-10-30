@@ -5,6 +5,23 @@ local and sanitizes them before displaying or using them in an issue draft.
 Do not paste provider transcripts, prompts, responses, credentials, or raw
 diagnostics into an issue.
 
+For persisted detailed evidence, use `komposyn-lg diagnostics list` and
+`komposyn-lg diagnostics show <problem-id>`. Review is separate:
+`komposyn-lg diagnostics review <problem-id> --state reviewed|skipped --expected-revision <revision>` records
+only review state and does not resolve a condition. List pagination uses the
+returned `next_token` as `--continuation`. Detailed problem IDs are distinct
+from legacy diagnostic fingerprints; older evidence may remain unavailable.
+Opening these commands' store can perform existing migrations and catalog
+synchronization. See [diagnostic inspection](diagnostic-inspection-contract.md)
+and [backup recovery](backups.md) before inspecting or restoring older data.
+To create a local shareable projection, use `komposyn-lg diagnostics export`
+with exact problem IDs already reviewed against current evidence. It prints
+the exact file contents before asking for explicit consent and writes only to
+a new caller-selected path. Logs are excluded unless `--include-logs` is
+explicitly selected, followed by numbered-row selection. Review the preview;
+diagnostic counts can still identify local activity. Export does not attach or
+upload anything.
+
 The CLI also keeps a separate bounded local event log. See
 [local troubleshooting logs](local-logs.md) for its location, privacy limits,
 and inspection commands. Log initialization or write failure does not change
@@ -110,8 +127,9 @@ Inspection does not scan provider files, start a collector, change the range,
 repair identity, or use the network. Opening the store can still apply its
 existing migrations and synchronize its embedded pricing catalog. Digests and
 exact activity values may identify local data; inspection JSON is not
-automatically safe to publish. This command requires KompoSyn core v0.9.0 or
-newer; the CLI's minimum supported core floor and dependency pin are both
+automatically safe to publish. The current development source requires
+KompoSyn core v0.10.0 or newer; this is the dependency pin and minimum core
+floor for the next CLI release. The latest published CLI v0.10.0 uses core
 v0.9.0. A local candidate override is not release validation.
 
 ## Background collector is stopped or stale

@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	tokenlogger "github.com/ayeshLK/komposyn/plugins/library/token-logger"
 )
 
 const (
@@ -54,11 +56,33 @@ type logReadRecord struct {
 	Count             *uint64           `json:"count,omitempty"`
 	PollDurationMS    *uint64           `json:"poll_duration_ms,omitempty"`
 	Summary           map[string]uint64 `json:"summary,omitempty"`
+	CoreDetails       map[string]string `json:"core,omitempty"`
 	File              string            `json:"file"`
 	MetadataTruncated bool              `json:"metadata_truncated"`
 	parsedTime        time.Time
 	fileRank          int
 	lineOrder         uint64
+}
+
+// logRecordRef is a selection handle issued from a parsed local reader result.
+// It is not a persisted identity and cannot produce an export by itself.
+type logRecordRef struct {
+	File      string
+	FileRank  int
+	LineOrder uint64
+}
+
+// logExportProjection intentionally omits the local record timestamp, PID,
+// run ID, file, and physical position. It is produced only by resolving a
+// caller's explicit selection against a bounded reader result.
+type logExportProjection struct {
+	Event      string            `json:"event"`
+	Level      string            `json:"level"`
+	Code       string            `json:"code,omitempty"`
+	CLI        string            `json:"cli_version"`
+	Core       string            `json:"core_version"`
+	Count      *uint64           `json:"count,omitempty"`
+	CoreFields map[string]string `json:"core,omitempty"`
 }
 
 type logReadResult struct {
@@ -113,6 +137,27 @@ var knownLogFields = map[string]struct{}{
 	"time": {}, "level": {}, "msg": {}, "format_version": {}, "cli_version": {},
 	"core_version": {}, "pid": {}, "run_id": {}, "command": {}, "code": {},
 	"exit_code": {}, "count": {}, "metadata_truncated": {}, "poll_duration_ms": {},
+}
+
+var coreDiagnosticFields = []string{
+	"core_contract_version", "core_kind", "core_evidence_scope", "core_evidence_availability", "core_evidence_unavailable_reason",
+	"core_evidence_truncated", "core_counts_scope", "core_counts_availability", "core_counts_saturated",
+	"core_counts_truncated", "core_component", "core_operation", "core_reason", "core_severity",
+	"core_category", "core_adapter", "core_retryability", "core_impact", "core_explanation_code",
+	"core_remediation_code", "core_count_ignored_non_usage", "core_count_unchanged_snapshot",
+	"core_count_deferred_incomplete_tail", "core_count_unsupported_usage", "core_count_malformed_record",
+	"core_count_failed_source",
+}
+
+var coreDiagnosticCountFields = []string{
+	"core_count_ignored_non_usage", "core_count_unchanged_snapshot", "core_count_deferred_incomplete_tail",
+	"core_count_unsupported_usage", "core_count_malformed_record", "core_count_failed_source",
+}
+
+func init() {
+	for _, field := range coreDiagnosticFields {
+		knownLogFields[field] = struct{}{}
+	}
 }
 
 var logSummaryCounters = []string{
@@ -272,6 +317,45 @@ func readManagedLogs(dir string, options logReadOptions) (logReadResult, error) 
 	return result, nil
 }
 
+func logRef(record logReadRecord) logRecordRef {
+	return logRecordRef{File: record.File, FileRank: record.fileRank, LineOrder: record.lineOrder}
+}
+
+func selectManagedLogExports(result logReadResult, selected []logRecordRef) ([]logExportProjection, error) {
+	if len(selected) == 0 || len(selected) > maxLogReadLimit {
+		return nil, errors.New("select between 1 and 200 parsed log records")
+	}
+	byRef := make(map[logRecordRef]logReadRecord, len(result.Records))
+	for _, record := range result.Records {
+		ref := logRef(record)
+		byRef[ref] = record
+	}
+	seen := make(map[logRecordRef]struct{}, len(selected))
+	projections := make([]logExportProjection, 0, len(selected))
+	for _, ref := range selected {
+		if _, duplicate := seen[ref]; duplicate {
+			return nil, errors.New("duplicate log record selection")
+		}
+		seen[ref] = struct{}{}
+		record, ok := byRef[ref]
+		if !ok {
+			return nil, errors.New("selected log record is unavailable")
+		}
+		projection := logExportProjection{Event: record.Event, Level: record.Level, Code: record.Code,
+			CLI: record.CLI, Core: record.Core, Count: record.Count}
+		if record.CoreDetails != nil {
+			projection.CoreFields = make(map[string]string, len(record.CoreDetails))
+			for _, field := range coreDiagnosticFields {
+				if value, found := record.CoreDetails[field]; found {
+					projection.CoreFields[field] = value
+				}
+			}
+		}
+		projections = append(projections, projection)
+	}
+	return projections, nil
+}
+
 func hasArchiveGap(missing []string) bool {
 	missingSet := make(map[string]bool, len(missing))
 	for _, name := range missing {
@@ -385,6 +469,7 @@ func decodeLogRecord(line []byte) (logReadRecord, string) {
 	}
 	seen := make(map[string]bool, 16)
 	summaryRaw := make(map[string]json.RawMessage, len(logSummaryFields))
+	coreRaw := make(map[string]json.RawMessage, len(coreDiagnosticFields))
 	var durationRaw json.RawMessage
 	unknown := false
 	for decoder.More() {
@@ -403,6 +488,9 @@ func decodeLogRecord(line []byte) (logReadRecord, string) {
 		}
 		if isLogSummaryField(key) {
 			summaryRaw[key] = append(json.RawMessage(nil), value...)
+		}
+		if isCoreDiagnosticField(key) {
+			coreRaw[key] = append(json.RawMessage(nil), value...)
 		}
 		if key == "poll_duration_ms" {
 			durationRaw = append(json.RawMessage(nil), value...)
@@ -461,6 +549,7 @@ func decodeLogRecord(line []byte) (logReadRecord, string) {
 	}
 	var summary map[string]uint64
 	var duration *uint64
+	var core map[string]string
 	if envelope.Message == "collector.summary" {
 		if !isCollectorHealthCodeValue(envelope.Code) || len(summaryRaw) != len(logSummaryFields) {
 			return result, "invalid"
@@ -490,11 +579,24 @@ func decodeLogRecord(line []byte) (logReadRecord, string) {
 	} else if len(summaryRaw) > 0 || len(durationRaw) > 0 {
 		return result, "invalid"
 	}
+	if envelope.Message == "core.diagnostic" {
+		decoded, valid := decodeCoreDiagnosticProjection(coreRaw, envelope.Code)
+		if !valid || envelope.Count != nil || envelope.ExitCode != nil || len(summaryRaw) > 0 || len(durationRaw) > 0 {
+			return result, "invalid"
+		}
+		core = decoded
+	} else if envelope.Message == "core.diagnostic_loss" {
+		if len(coreRaw) != 0 || envelope.Code != "core_observer_loss" || envelope.Count == nil || *envelope.Count == 0 || len(summaryRaw) > 0 || len(durationRaw) > 0 {
+			return result, "invalid"
+		}
+	} else if len(coreRaw) > 0 {
+		return result, "invalid"
+	}
 	result = logReadRecord{
 		Time: parsedTime.UTC().Format(time.RFC3339Nano), Level: envelope.Level, Event: envelope.Message,
 		CLI: envelope.CLI, Core: envelope.Core, PID: envelope.PID, RunID: strings.ToLower(envelope.RunID),
 		Command: envelope.Command, Code: envelope.Code, ExitCode: envelope.ExitCode, Count: envelope.Count,
-		PollDurationMS: duration, Summary: summary,
+		PollDurationMS: duration, Summary: summary, CoreDetails: core,
 		MetadataTruncated: envelope.MetadataTruncated, parsedTime: parsedTime,
 	}
 	return result, "ok"
@@ -533,6 +635,93 @@ func isLogSummaryField(key string) bool {
 	return false
 }
 
+func isCoreDiagnosticField(key string) bool {
+	for _, field := range coreDiagnosticFields {
+		if key == field {
+			return true
+		}
+	}
+	return false
+}
+
+func decodeCoreDiagnosticProjection(raw map[string]json.RawMessage, code string) (map[string]string, bool) {
+	if len(raw) == 0 {
+		return nil, false
+	}
+	values := make(map[string]string, len(raw))
+	for key, encoded := range raw {
+		var value string
+		if err := json.Unmarshal(encoded, &value); err != nil || len(value) > maxLogReadTextBytes {
+			return nil, false
+		}
+		values[key] = value
+	}
+	kind := values["core_kind"]
+	wantCode := map[string]string{
+		"operation_failed": "core_operation_failed", "condition_summary": "core_condition_summary",
+		"poll_summary": "core_poll_summary", "operation_recovered": "core_operation_recovered",
+	}[kind]
+	if wantCode == "" || code != wantCode || values["core_contract_version"] != "1" ||
+		!containsString([]string{"operation", "poll", "run", "source_generation"}, values["core_evidence_scope"]) ||
+		!containsString([]string{"available", "not_collected", "not_applicable", "unsupported", "redacted", "lost", "unknown"}, values["core_evidence_availability"]) ||
+		!isBooleanText(values["core_evidence_truncated"]) ||
+		!containsString([]string{"operation", "poll", "run", "lifetime"}, values["core_counts_scope"]) ||
+		!containsString([]string{"available", "not_collected", "not_applicable", "unsupported", "redacted", "lost", "unknown"}, values["core_counts_availability"]) ||
+		!isBooleanText(values["core_counts_saturated"]) || !isBooleanText(values["core_counts_truncated"]) {
+		return nil, false
+	}
+	evidence := tokenlogger.DiagnosticEvidence{
+		Scope:             tokenlogger.DiagnosticEvidenceScope(values["core_evidence_scope"]),
+		Availability:      tokenlogger.DiagnosticAvailability(values["core_evidence_availability"]),
+		UnavailableReason: tokenlogger.DiagnosticUnavailableReason(values["core_evidence_unavailable_reason"]),
+		Truncated:         values["core_evidence_truncated"] == "true",
+	}
+	if evidence.Validate() != nil {
+		return nil, false
+	}
+	classificationFields := []string{"core_component", "core_operation", "core_reason", "core_severity", "core_category", "core_adapter", "core_retryability", "core_impact", "core_explanation_code", "core_remediation_code"}
+	classPresent := false
+	for _, field := range classificationFields {
+		if _, ok := values[field]; ok {
+			classPresent = true
+		}
+	}
+	if kind == "poll_summary" && classPresent || kind != "poll_summary" && !classPresent {
+		return nil, false
+	}
+	if classPresent {
+		classification := tokenlogger.DiagnosticClassification{
+			Component: tokenlogger.DiagnosticComponent(values["core_component"]), Operation: tokenlogger.DiagnosticOperation(values["core_operation"]),
+			Reason: tokenlogger.DiagnosticReason(values["core_reason"]), Severity: tokenlogger.DiagnosticSeverity(values["core_severity"]),
+			Category: tokenlogger.DiagnosticCategory(values["core_category"]), Adapter: tokenlogger.DiagnosticAdapter(values["core_adapter"]),
+			Retryability: tokenlogger.DiagnosticRetryability(values["core_retryability"]), Impact: tokenlogger.DiagnosticImpact(values["core_impact"]),
+			ExplanationCode: tokenlogger.DiagnosticExplanationCode(values["core_explanation_code"]), RemediationCode: tokenlogger.DiagnosticRemediationCode(values["core_remediation_code"]),
+		}
+		if classification.Validate() != nil {
+			return nil, false
+		}
+	}
+	if values["core_counts_availability"] == "available" {
+		for _, field := range coreDiagnosticCountFields {
+			if _, ok := values[field]; !ok {
+				return nil, false
+			}
+			if _, err := strconv.ParseUint(values[field], 10, 64); err != nil {
+				return nil, false
+			}
+		}
+	} else {
+		for _, field := range coreDiagnosticCountFields {
+			if _, ok := values[field]; ok {
+				return nil, false
+			}
+		}
+	}
+	return values, true
+}
+
+func isBooleanText(value string) bool { return value == "true" || value == "false" }
+
 func parseExactLogInteger(raw json.RawMessage) (uint64, bool) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()
@@ -565,13 +754,15 @@ var allowedLogEvents = []string{
 	"process.started", "process.finished", "command.failed", "collector.started", "collector.stopped",
 	"collector.failed", "logging.unavailable", "logging.events_suppressed", "logging.events_dropped",
 	"data_directory.resolved", "collector.health_changed", "collector.summary", "settings.updated", "settings.load_failed",
+	"core.diagnostic", "core.diagnostic_loss",
 }
 var allowedLogCodes = []string{
 	"database_open", "settings_load", "collector_acquire", "collector_heartbeat", "collector_poll", "collector_store", "log_write",
 	"settings_update", "onboarding_save", "data_directory", "report_query", "report_render", "process_launch",
 	"collector_readiness", "collector_release", "collector_stop", "collector_health_running", "collector_health_degraded",
 	"collector_health_stale", "explicit", "environment", "current_default", "legacy_default", "import_discovery",
-	"import_source", "protocol_record",
+	"import_source", "protocol_record", "core_operation_failed", "core_condition_summary", "core_poll_summary",
+	"core_operation_recovered", "core_observer_loss",
 }
 var allowedLogCommands = []string{"interactive", "version", "harness", "completion", "import", "projects", "sessions", "usage", "cost", "watch", "settings", "report-issue", "other"}
 
@@ -675,6 +866,13 @@ func writeLogReadResult(output io.Writer, result logReadResult, format string) e
 		for _, key := range logSummaryFields {
 			if value, ok := record.Summary[key]; ok {
 				if _, err := fmt.Fprintf(output, " %s=%d", key, value); err != nil {
+					return err
+				}
+			}
+		}
+		for _, key := range coreDiagnosticFields {
+			if value, ok := record.CoreDetails[key]; ok {
+				if _, err := fmt.Fprintf(output, " %s=%s", key, escapeLogText(value)); err != nil {
 					return err
 				}
 			}
