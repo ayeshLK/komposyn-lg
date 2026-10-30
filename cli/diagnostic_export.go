@@ -286,7 +286,8 @@ func projectSelectedLogForExport(record logExportProjection) (diagnosticExportLo
 
 var allowedCoreLogFields = map[string]struct{}{
 	"core_contract_version": {}, "core_kind": {}, "core_evidence_scope": {}, "core_evidence_availability": {},
-	"core_evidence_truncated": {}, "core_counts_scope": {}, "core_counts_availability": {},
+	"core_evidence_unavailable_reason": {},
+	"core_evidence_truncated":          {}, "core_counts_scope": {}, "core_counts_availability": {},
 	"core_counts_saturated": {}, "core_counts_truncated": {}, "core_component": {}, "core_operation": {},
 	"core_reason": {}, "core_severity": {}, "core_category": {}, "core_adapter": {}, "core_retryability": {},
 	"core_impact": {}, "core_explanation_code": {}, "core_remediation_code": {},
@@ -313,6 +314,12 @@ func projectExportCoreLogFields(fields map[string]string) (map[string]string, er
 		!oneOf(fields["core_evidence_availability"], "available", "not_collected", "not_applicable", "unsupported", "redacted", "lost", "unknown") ||
 		!oneOf(fields["core_counts_scope"], "operation", "poll", "run", "lifetime") ||
 		!oneOf(fields["core_counts_availability"], "available", "not_collected", "not_applicable", "unsupported", "redacted", "lost", "unknown") {
+		return nil, ErrDiagnosticExportSelection
+	}
+	if reason, ok := fields["core_evidence_unavailable_reason"]; ok && !oneOf(reason,
+		string(tokenlogger.DiagnosticUnavailableNotCollected), string(tokenlogger.DiagnosticUnavailableNotApplicable),
+		string(tokenlogger.DiagnosticUnavailableUnsupported), string(tokenlogger.DiagnosticUnavailableRedacted),
+		string(tokenlogger.DiagnosticUnavailableLost), string(tokenlogger.DiagnosticUnavailableUnknown)) {
 		return nil, ErrDiagnosticExportSelection
 	}
 	for _, key := range []string{"core_evidence_truncated", "core_counts_saturated", "core_counts_truncated"} {
