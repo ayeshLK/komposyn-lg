@@ -51,10 +51,11 @@ an issue.
 
 The [event and code catalogue](issue-57-cli-logging-coverage.md) defines the
 format-version-1 event names, controlled codes, and latest-poll versus
-run-cumulative counter scopes. With the currently pinned core v0.9.0, source
-and parser causes unavailable from the public API remain generic. Rich typed
-core events depend on core #163 and a reviewed published core release; the CLI
-does not infer causes from error strings. A log event is best-effort evidence,
+run-cumulative counter scopes. The current development dependency on core
+v0.10.0 exposes the optional observer and typed-error APIs from core #163.
+Their CLI adapter is the remaining #57 B work; until that integration ships,
+the existing baseline events use generic classifications where causes are
+unavailable. The CLI does not infer causes from error strings. A log event is best-effort evidence,
 not an atomic outbox, an exactly-once stream, or an accounting authority.
 
 ## Size, rotation, and recovery
