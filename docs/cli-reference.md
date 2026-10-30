@@ -331,6 +331,32 @@ data; neither text nor JSON is automatically safe to publish. See
 [diagnostic inspection and reviewed export](diagnostic-inspection-contract.md)
 and [backups](backups.md) before sharing or upgrading existing data.
 
+### `diagnostics export`
+
+```text
+komposyn-lg diagnostics export <full-problem-id>... --output <path>
+  [--data-dir <path>] [--include-logs] [--log-limit <1-200>]
+```
+
+Select one or more exact detailed problem IDs. Every selected detail must have
+been marked reviewed for its current evidence revision, and core re-fetches
+the details when preparing the export. The command prints the exact bounded
+versioned JSON projection, then asks for explicit consent. Only an affirmative
+answer creates a private new file; an existing file or destination symlink is
+not replaced. EOF and an unrecognized answer do not consent. The output path
+is caller selected. The command does not upload, attach, or open the file.
+In the REPL, quote destination paths that contain spaces.
+
+Associated logs are excluded unless `--include-logs` is present. That option
+shows a bounded numbered list from managed local logs and asks which exact rows
+to include; blank means no logs. `--log-limit` controls the maximum rows shown
+and is valid only with `--include-logs`. The displayed selection can be
+incomplete under reader limits; unshown records cannot be selected. Exported
+log fields are separately allowlisted and omit timestamps, process/run IDs,
+file names, and messages. Diagnostic counts and classifications may still
+identify local activity, so inspect the preview before consenting. Opening
+SQLite can perform the normal `Store.Open` migration and catalog synchronization.
+
 ### `logs show`
 
 ```text
@@ -428,6 +454,7 @@ the current report range or navigation:
 /diagnostics [list]
 /diagnostics show <problem-id>
 /diagnostics review <problem-id> <reviewed|skipped>
+/diagnostics export <full-problem-id>... --output <path> [--include-logs] [--log-limit <1-200>]
 ```
 
 List uses one bounded page and prints the continuation token for a subsequent
@@ -435,6 +462,12 @@ noninteractive `diagnostics list --continuation <token>` request. Review is a
 local compare-and-set action and does not mean the operational condition was
 resolved or consent to export. These commands use the already-open store; its
 normal migration/catalog synchronization behavior still applies.
+
+Export requires current reviewed evidence, shows its exact bounded JSON
+projection before consent, and creates a private new file only after an
+affirmative response. Logs require the separate `--include-logs` opt-in and
+numbered row selection; blank selection includes none. The REPL uses its
+already-open database and does not accept `--data-dir` for this command.
 
 Use `/range` to show the mode and effective UTC bounds. `/range <from> <to>`
 pins an explicit half-open range (accepting ISO-8601 dates or timestamps),
