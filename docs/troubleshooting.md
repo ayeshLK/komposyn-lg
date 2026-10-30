@@ -5,6 +5,16 @@ local and sanitizes them before displaying or using them in an issue draft.
 Do not paste provider transcripts, prompts, responses, credentials, or raw
 diagnostics into an issue.
 
+For persisted detailed evidence, use `komposyn-lg diagnostics list` and
+`komposyn-lg diagnostics show <problem-id>`. Review is separate:
+`komposyn-lg diagnostics review <problem-id> --state reviewed|skipped --expected-revision <revision>` records
+only review state and does not resolve a condition. List pagination uses the
+returned `next_token` as `--continuation`. Detailed problem IDs are distinct
+from legacy diagnostic fingerprints; older evidence may remain unavailable.
+Opening these commands' store can perform existing migrations and catalog
+synchronization. See [diagnostic inspection](diagnostic-inspection-contract.md)
+and [backup recovery](backups.md) before inspecting or restoring older data.
+
 The CLI also keeps a separate bounded local event log. See
 [local troubleshooting logs](local-logs.md) for its location, privacy limits,
 and inspection commands. Log initialization or write failure does not change
