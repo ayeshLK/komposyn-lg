@@ -48,7 +48,7 @@ Commands:
   watch           Register sources and run foreground or detached collection
   settings        Set embedded collector preferences
   report-issue    Export pending sanitized diagnostics for review
-  diagnostics     Inspect and review bounded persisted diagnostic details
+  diagnostics     Inspect, review, and export bounded persisted diagnostic details
   logs            Inspect bounded local troubleshooting logs
   harness         Run the versioned JSONL integration protocol
   version         Print the embedded CLI version
@@ -320,6 +320,7 @@ before sharing. Exit status: 0 inspected or unavailable, 1 invalid arguments,
   komposyn-lg diagnostics list [filters] [--page-size <1-100>] [--continuation <token>] [--data-dir <path>] [--format text|json]
   komposyn-lg diagnostics show <problem-id> [--data-dir <path>] [--format text|json]
   komposyn-lg diagnostics review <problem-id> --state reviewed|skipped --expected-revision <revision> [--data-dir <path>]
+  komposyn-lg diagnostics export <problem-id>... --output <path> [--data-dir <path>] [--include-logs] [--log-limit <1-200>]
 
 Lists bounded persisted diagnostic evidence, inspects one detailed problem ID,
 or marks the exact inspected evidence revision reviewed/skipped. Supply the
@@ -331,6 +332,26 @@ are not detailed problem IDs. Store.Open may migrate the database and
 synchronize its catalog. Details and digests may identify local data; inspect
 locally before sharing. This command does not read provider files, start a
 collector, repair data, or transmit evidence.
+`,
+	"diagnostics export": `Usage:
+  komposyn-lg diagnostics export <full-problem-id>... --output <path> [--data-dir <path>]
+    [--include-logs] [--log-limit <1-200>]
+
+Select one or more exact detailed problem IDs. Only diagnostics already
+reviewed against their current evidence revision and eligible for sharing can
+be exported. The exact bounded, versioned JSON projection is printed before
+the final consent prompt. The destination is created privately and is never
+overwritten. The command does not upload, attach, or open the file.
+In the REPL, it uses the already-open database and does not accept --data-dir;
+quote destination paths that contain spaces.
+
+Logs are a separate, opt-in selection. With --include-logs, the command lists
+bounded managed log records and asks for specific numbered rows; blank selects
+no logs. No log records are included by default. Log selection is bounded and
+may be incomplete; unshown records cannot be selected. Log paths, timestamps,
+process identifiers and arbitrary messages are omitted from the export.
+Diagnostic values may still be identifying; inspect the preview before
+consenting. Store.Open may migrate the database and synchronize its catalog.
 `,
 	"diagnostics list": `Usage:
   komposyn-lg diagnostics list [--review-state pending|reviewed|skipped]
@@ -427,7 +448,7 @@ func helpTargetFromCommand(args []string) []string {
 				return []string{command, subcommand}
 			}
 		case "diagnostics":
-			if subcommand == "list" || subcommand == "show" || subcommand == "review" {
+			if subcommand == "list" || subcommand == "show" || subcommand == "review" || subcommand == "export" {
 				return []string{command, subcommand}
 			}
 		}
@@ -511,9 +532,9 @@ _komposyn_lg() {
       *) COMPREPLY=( $(compgen -W "--help -h" -- "$cur") ) ;;
     esac
   elif [[ "$cmd" == "diagnostics" && ${COMP_CWORD} -eq 2 ]]; then
-    if [[ "$cur" == -* ]]; then COMPREPLY=( $(compgen -W "--help -h" -- "$cur") ); else COMPREPLY=( $(compgen -W "list show review" -- "$cur") ); fi
+    if [[ "$cur" == -* ]]; then COMPREPLY=( $(compgen -W "--help -h" -- "$cur") ); else COMPREPLY=( $(compgen -W "list show review export" -- "$cur") ); fi
   elif [[ "$cmd" == "help" && ${COMP_CWORD} -eq 3 && "${COMP_WORDS[2]}" == "diagnostics" ]]; then
-    COMPREPLY=( $(compgen -W "list show review" -- "$cur") )
+    COMPREPLY=( $(compgen -W "list show review export" -- "$cur") )
   elif [[ "$cmd" == "projects" && ${COMP_CWORD} -eq 2 ]]; then
     if [[ "$cur" == -* ]]; then COMPREPLY=( $(compgen -W "--help -h" -- "$cur") ); else COMPREPLY=( $(compgen -W "list show inspect" -- "$cur") ); fi
   elif [[ "$cmd" == "sessions" && ${COMP_CWORD} -eq 2 ]]; then
@@ -559,6 +580,7 @@ _komposyn_lg() {
       diagnostics:list) options="--help -h --data-dir --format --review-state --condition --category --reason --subject-reference --page-size --continuation" ;;
       diagnostics:show) options="--help -h --data-dir --format" ;;
       diagnostics:review) options="--help -h --data-dir --state --expected-revision" ;;
+      diagnostics:export) options="--help -h --data-dir --output --include-logs --log-limit" ;;
       sessions:list) options="--help -h --data-dir --format --from --to --project --client --provider --model" ;;
       sessions:show) options="--help -h --data-dir --format --from --to --project --client --provider --model --group-by" ;;
       watch:add) options="--help -h --data-dir --defaults" ;;
@@ -603,7 +625,7 @@ _komposyn-lg() {
     'watch:Manage collection'
     'settings:Set collector preferences'
     'report-issue:Export sanitized diagnostics'
-    'diagnostics:Inspect and review local diagnostic details'
+    'diagnostics:Inspect, review, and export local diagnostic details'
     'logs:Inspect local troubleshooting logs'
     'harness:Run JSONL protocol'
     'completion:Print shell completion'
@@ -628,9 +650,9 @@ _komposyn-lg() {
   elif [[ ${words[2]} == help && ${words[3]} == sessions ]] && (( CURRENT == 4 )); then
     if [[ ${words[CURRENT]} == -* ]]; then compadd -- --help -h; else compadd list show; fi
   elif [[ ${words[2]} == diagnostics ]] && (( CURRENT == 3 )); then
-    if [[ ${words[CURRENT]} == -* ]]; then compadd -- --help -h; else compadd list show review; fi
+    if [[ ${words[CURRENT]} == -* ]]; then compadd -- --help -h; else compadd list show review export; fi
   elif [[ ${words[2]} == help && ${words[3]} == diagnostics ]] && (( CURRENT == 4 )); then
-    if [[ ${words[CURRENT]} == -* ]]; then compadd -- --help -h; else compadd list show review; fi
+    if [[ ${words[CURRENT]} == -* ]]; then compadd -- --help -h; else compadd list show review export; fi
   elif [[ ${words[2]} == projects ]] && (( CURRENT == 3 )); then
     if [[ ${words[CURRENT]} == -* ]]; then compadd -- --help -h; else compadd list show inspect; fi
   elif [[ ${words[2]} == sessions ]] && (( CURRENT == 3 )); then
@@ -667,6 +689,7 @@ _komposyn-lg() {
       diagnostics:list) compadd -- --help -h --data-dir --format --review-state --condition --category --reason --subject-reference --page-size --continuation ;;
       diagnostics:show) compadd -- --help -h --data-dir --format ;;
       diagnostics:review) compadd -- --help -h --data-dir --state --expected-revision ;;
+      diagnostics:export) compadd -- --help -h --data-dir --output --include-logs --log-limit ;;
       sessions:list) compadd -- --help -h --data-dir --format --from --to --project --client --provider --model ;;
       sessions:show) compadd -- --help -h --data-dir --format --from --to --project --client --provider --model --group-by ;;
       watch:add) compadd -- --help -h --data-dir --defaults ;;
@@ -688,7 +711,7 @@ const fishCompletion = `# komposyn-lg completion for Fish
 complete -c komposyn-lg -f -n '__fish_use_subcommand' -a 'help version import usage cost projects sessions watch settings report-issue diagnostics logs harness completion'
 complete -c komposyn-lg -f -n '__fish_seen_subcommand_from help; and not __fish_seen_subcommand_from version import usage cost projects sessions watch settings report-issue diagnostics logs harness completion' -a 'help version import usage cost projects sessions watch settings report-issue diagnostics logs harness completion'
 complete -c komposyn-lg -f -n '__fish_seen_subcommand_from watch; and not __fish_seen_subcommand_from add remove list start status stop foreground' -a 'add remove list start status stop foreground'
-complete -c komposyn-lg -f -n '__fish_seen_subcommand_from diagnostics; and not __fish_seen_subcommand_from list show review' -a 'list show review'
+complete -c komposyn-lg -f -n '__fish_seen_subcommand_from diagnostics; and not __fish_seen_subcommand_from list show review export' -a 'list show review export'
 complete -c komposyn-lg -f -n '__fish_seen_subcommand_from projects; and not __fish_seen_subcommand_from list show inspect' -a 'list show inspect'
 complete -c komposyn-lg -f -n '__fish_seen_subcommand_from sessions; and not __fish_seen_subcommand_from list show' -a 'list show'
 complete -c komposyn-lg -f -n '__fish_seen_subcommand_from completion' -a 'bash zsh fish powershell'
@@ -701,6 +724,9 @@ complete -c komposyn-lg -l format -r -a 'text json' -n '__fish_seen_subcommand_f
 complete -c komposyn-lg -l review-state -r -a 'pending reviewed skipped' -n '__fish_seen_subcommand_from diagnostics; and __fish_seen_subcommand_from list' -d 'Review state filter'
 complete -c komposyn-lg -l condition -r -a 'active resolved unknown' -n '__fish_seen_subcommand_from diagnostics; and __fish_seen_subcommand_from list' -d 'Operational condition filter'
 complete -c komposyn-lg -l state -r -a 'reviewed skipped' -n '__fish_seen_subcommand_from diagnostics; and __fish_seen_subcommand_from review' -d 'Review state'
+complete -c komposyn-lg -l output -r -n '__fish_seen_subcommand_from diagnostics; and __fish_seen_subcommand_from export' -d 'New private export path'
+complete -c komposyn-lg -l include-logs -n '__fish_seen_subcommand_from diagnostics; and __fish_seen_subcommand_from export' -d 'Opt in to selecting local log rows'
+complete -c komposyn-lg -l log-limit -r -n '__fish_seen_subcommand_from diagnostics; and __fish_seen_subcommand_from export' -d 'Maximum local log rows to display'
 complete -c komposyn-lg -l format -r -a 'text json' -n '__fish_seen_subcommand_from import' -d 'Import result format'
 complete -c komposyn-lg -l format -r -a 'table json csv' -n '__fish_seen_subcommand_from usage cost sessions' -d 'Report format'
 complete -c komposyn-lg -l format -r -a 'table json csv' -n '__fish_seen_subcommand_from projects; and __fish_seen_subcommand_from list' -d 'Project list format'
@@ -747,7 +773,7 @@ Register-ArgumentCompleter -Native -CommandName komposyn-lg,komposyn-lg.exe -Scr
   $watch = @('add','remove','list','start','status','stop','foreground')
   $resources = @('list','show')
   $projectResources = @('list','show','inspect')
-  $diagnosticResources = @('list','show','review')
+  $diagnosticResources = @('list','show','review','export')
   $elements = [System.Collections.Generic.List[string]]::new()
   foreach ($element in $words) { $elements.Add($element) }
   if ($wordToComplete -and $elements.Count -gt 1 -and $elements[$elements.Count - 1] -eq $wordToComplete) { $elements.RemoveAt($elements.Count - 1) }
@@ -798,6 +824,7 @@ Register-ArgumentCompleter -Native -CommandName komposyn-lg,komposyn-lg.exe -Scr
     if ($wordToComplete -like '-*') { $candidates = @('--help','-h','--data-dir','--format','--from','--to','--project','--session','--client','--provider','--model','--group-by','--timezone') }
     else { $candidates = $resources }
   }
+  elseif ($elements.Count -eq 2 -and $command -eq 'diagnostics') { $candidates = $diagnosticResources }
   elseif ($elements.Count -eq 2 -and $command -notin $commands) { $candidates = $commands + @('--help','-h','--version') }
   else {
     switch ("${command}:${subcommand}") {
@@ -815,6 +842,7 @@ Register-ArgumentCompleter -Native -CommandName komposyn-lg,komposyn-lg.exe -Scr
       { $_ -eq 'watch:start' -or $_ -eq 'watch:foreground' -or $_ -like 'watch:*' } { $candidates = @('--help','-h','--data-dir','--interval'); break }
       { $_ -like 'settings:*' } { $candidates = @('--help','-h','--data-dir','--collector','--auto-start'); break }
       { $_ -like 'report-issue:*' } { $candidates = @('--help','-h','--data-dir','--output'); break }
+      'diagnostics:export' { $candidates = @('--help','-h','--data-dir','--output','--include-logs','--log-limit'); break }
       { $_ -like 'logs:show' } { $candidates = @('--help','-h','--since','--level','--limit','--format'); break }
       { $_ -like 'version:*' } { $candidates = @('--help','-h','--version'); break }
       default { $candidates = @('--help','-h') }

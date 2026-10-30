@@ -2,8 +2,8 @@
 
 Core #112 and #163 are complete and their public APIs are available in
 published core v0.10.0. The CLI inspection/review increment is implemented by
-`diagnostics list|show|review`; the separately reviewed export workflow is
-tracked independently. The CLI must not use direct diagnostic SQL, copy core
+`diagnostics list|show|review`; reviewed export is available through
+`diagnostics export`. The CLI must not use direct diagnostic SQL, copy core
 summary logic, or commit a temporary module replacement.
 
 ## Core-owned inspection and review
@@ -41,27 +41,32 @@ active/resolved/unknown condition.
 
 ## Reviewed export
 
-Export is a separate action from viewing or reviewing. The workflow must:
+Export is separate from viewing or reviewing. The CLI requires one or more
+full problem IDs and a caller-selected `--output` path. It re-fetches each ID
+from core and accepts only details marked reviewed for the current evidence
+revision. Viewing and review do not provide export consent. The workflow:
 
-1. Make the evidence selection explicit. Reviewed diagnostics are eligible only
-   when individually selected; associated logs require a separate selection.
-2. Show the exact bounded shareable projection and its remaining identifiers
-   before final confirmation. A review mark is not export consent.
-3. Re-project approved fields into a versioned shareable envelope. Exclude
+1. Makes evidence selection explicit. Associated logs are excluded by default.
+   `--include-logs` opts into a bounded managed-log listing and a separate
+   numbered-row selection; a blank selection includes no logs. Caller-provided
+   event/code tuples are not accepted.
+2. Shows the exact bounded versioned projection before final confirmation.
+   A review mark is not export consent.
+3. Re-projects approved fields into a versioned shareable envelope. Excludes
    unknown fields, arbitrary error/message text, local PID/run/process IDs,
    source identifiers, and exact timestamps. Any deliberate retention needs
    an explicit privacy policy and a visible explanation.
-4. Write only to a caller-selected destination, with private access and
+4. Writes only to a caller-selected destination, with private access and
    create-new/no-overwrite semantics. A failed write must not leave a file
    represented as a completed export.
-5. Perform no upload, browser launch, issue-draft attachment, provider-file
+5. Performs no upload, browser launch, issue-draft attachment, provider-file
    access, or external contact.
 
-The export may still contain category, reason, version, broad time bucket,
-counts, and safe remediation that can identify a product configuration or
-rare failure. Sanitized does not mean anonymous. Export destination, file mode
-and ACL behavior, failure cleanup, and the exact envelope version will be
-specified against the released core model before B is implemented.
+The export may still contain category, reason, component/version, exact
+counters, and safe remediation that can identify a product configuration or
+rare failure. Sanitized does not mean anonymous. The CLI uses a versioned
+envelope, private create-new/no-overwrite file creation, and bounded failure
+cleanup. Review the exact preview and destination before consenting.
 
 The bounded `logs show` command is independent of this workflow. Its local
 output includes exact timestamps and run identifiers and must never be treated

@@ -14,6 +14,13 @@ from legacy diagnostic fingerprints; older evidence may remain unavailable.
 Opening these commands' store can perform existing migrations and catalog
 synchronization. See [diagnostic inspection](diagnostic-inspection-contract.md)
 and [backup recovery](backups.md) before inspecting or restoring older data.
+To create a local shareable projection, use `komposyn-lg diagnostics export`
+with exact problem IDs already reviewed against current evidence. It prints
+the exact file contents before asking for explicit consent and writes only to
+a new caller-selected path. Logs are excluded unless `--include-logs` is
+explicitly selected, followed by numbered-row selection. Review the preview;
+diagnostic counts can still identify local activity. Export does not attach or
+upload anything.
 
 The CLI also keeps a separate bounded local event log. See
 [local troubleshooting logs](local-logs.md) for its location, privacy limits,
