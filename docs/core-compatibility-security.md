@@ -2,10 +2,12 @@
 
 The standalone CLI and KompoSyn core are versioned independently. The CLI pins
 one core module version in `go.mod`; `plugin_version` reports that core version
-and `cli_version` reports the executable version. The current published CLI is
-v0.10.0, pinned to core v0.9.0. The minimum supported core floor and current
-pin are both v0.9.0. Earlier published mappings are retained here for upgrade
-compatibility:
+and `cli_version` reports the executable version. The latest published CLI is
+v0.10.0, pinned to core v0.9.0 and schema 17. The current development source
+pins published core v0.10.0 and sets that as the minimum core floor for the
+next CLI release; it supports schema 18. This source pin does not mean a CLI
+release using v0.10.0 has been published. Earlier published mappings are
+retained here for upgrade compatibility:
 
 | CLI release | Pinned core | Schema supported by that core |
 | --- | --- | ---: |
@@ -13,6 +15,7 @@ compatibility:
 | v0.8.1 | v0.7.1 | 15 |
 | v0.8.2 and v0.9.0 | v0.8.0 | 16 |
 | v0.10.0 | v0.9.0 | 17 |
+| Next CLI release (not yet published) | v0.10.0 | 18 |
 
 The standalone security support policy is latest-published-release only. As of
 2026-10-22, v0.10.0 is supported; a newer published CLI release supersedes it
@@ -46,8 +49,10 @@ Dependabot may propose core dependency updates. Review each update for:
 
 Core v0.8.0 advanced SQLite schema 15 to 16 with private parser checkpoints.
 Core v0.9.0 advances schema 16 to 17 to record project-name origin; existing
-origins remain unknown. These forward-only migrations create a verified
-pre-migration backup. Current recovery and version-compatibility instructions
+origins remain unknown. Core v0.10.0 advances schema 17 to 18 for bounded
+persisted diagnostic details and their database-local namespace. These
+forward-only migrations create a verified pre-migration backup; no automatic
+down-migration is provided. Current recovery and version-compatibility instructions
 are in [backups](backups.md), [migrations](migrations.md), and [upgrades](upgrades.md).
 Never commit a `replace` directive; candidate overrides belong only in
 disposable CI or measurement worktrees.

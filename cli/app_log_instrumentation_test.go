@@ -65,6 +65,14 @@ func (logger *recordingApplicationLog) CollectorSummary(command appCommand, stat
 	logger.summaries = append(logger.summaries, recordedSummary{command, status, durationMS, latest, cumulative})
 }
 
+func (logger *recordingApplicationLog) CoreObserver(appCommand) *tokenlogger.DiagnosticObserver {
+	return nil
+}
+func (logger *recordingApplicationLog) CoreFailure(err error, event appLogEvent, code appLogCode, command appCommand, exit int) {
+	if !coreFailureEnqueued(err) {
+		logger.Event(event, code, command, exit)
+	}
+}
 func (logger *recordingApplicationLog) Unavailable() bool { return logger.missing }
 func (logger *recordingApplicationLog) Close()            {}
 
@@ -107,7 +115,7 @@ func TestInteractiveDatabaseOpenFailureIsLoggedBeforeStoreExists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(contents), `"code":"database_open"`) || !strings.Contains(string(contents), `"msg":"data_directory.resolved"`) {
+	if !strings.Contains(string(contents), `"code":"core_operation_failed"`) || !strings.Contains(string(contents), `"core_operation":"open"`) || !strings.Contains(string(contents), `"msg":"data_directory.resolved"`) {
 		t.Fatalf("log missing safe resolution/open evidence: %s", contents)
 	}
 	if strings.Contains(string(contents), marker) || strings.Contains(string(contents), root) || strings.Contains(string(contents), "database is a directory") {
@@ -214,7 +222,7 @@ func TestHarnessDatabaseOpenFailurePreservesProtocolOutputAndLogsSafely(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(contents), `"code":"database_open"`) || strings.Contains(string(contents), marker) || strings.Contains(string(contents), dataDir) {
+	if !strings.Contains(string(contents), `"code":"core_operation_failed"`) || !strings.Contains(string(contents), `"core_operation":"open"`) || strings.Contains(string(contents), marker) || strings.Contains(string(contents), dataDir) {
 		t.Fatalf("harness log missing safe open classification or contains path: %s", contents)
 	}
 }

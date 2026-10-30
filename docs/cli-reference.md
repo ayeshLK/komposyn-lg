@@ -1,7 +1,7 @@
 # CLI reference
 
-The executable is `komposyn-lg`. Run `komposyn-lg version` to print the CLI
-version and the reusable core version embedded in this build.
+The executable is `komposyn-lg`. Run `komposyn-lg version` to print this
+executable's version and the reusable core version embedded in this build.
 
 ## Data directory
 
@@ -197,8 +197,9 @@ Inspection itself does not read provider files, start collection, repair
 identities, or access the network. `Store.Open` can still perform its existing
 migration/catalog synchronization. Stable digests and exact metrics may
 identify data, so inspection JSON is not automatically safe to publish.
-This command requires KompoSyn core v0.9.0 or newer; the CLI's current minimum
-supported core floor and dependency pin are both v0.9.0. Temporary candidate
+This command requires KompoSyn core v0.10.0 or newer in the current development
+source; that is the dependency pin and minimum core floor for the next CLI
+release. The latest published CLI v0.10.0 uses core v0.9.0. Temporary candidate
 overrides are development validation only.
 
 These commands browse stable local resources. List JSON and CSV have
@@ -299,6 +300,63 @@ controls. The archive contains `diagnostics.json`; it does not include provider
 transcripts, prompts, responses, credentials, or source files. This command
 performs no network request and does not mark diagnostics as reviewed.
 
+### `diagnostics list`, `show`, and `review`
+
+```text
+komposyn-lg diagnostics list [--review-state pending|reviewed|skipped]
+  [--condition active|resolved|unknown] [--category <code>] [--reason <code>]
+  [--subject-reference <opaque-ref>] [--page-size <1-100>]
+  [--continuation <token>] [--data-dir <path>] [--format text|json]
+komposyn-lg diagnostics show <problem-id> [--data-dir <path>] [--format text|json]
+komposyn-lg diagnostics review <problem-id> --state reviewed|skipped --expected-revision <revision> [--data-dir <path>]
+```
+
+These commands query persisted core diagnostic details; they do not scan
+provider files, start collection, repair data, or use the network. `list`
+delegates filtering and bounded pagination to core (default page size 20,
+maximum 100). Continue with its `next_token` using the same filters and page
+size. JSON is the versioned core response, preserving exact counter decimal
+strings, saturation/truncation, unavailable evidence and separate
+latest-poll/latest-observed-run/lifetime scopes. Older legacy fingerprints
+are not detailed problem IDs. `show` displays the core's privacy-filtered
+projection. `review` uses core compare-and-set; a conflict requires re-reading
+the detail. Review state is separate from active/resolved/unknown condition
+and does not imply repair or export consent.
+
+Opening the store can perform normal schema migration and pricing-catalog
+synchronization. Thus diagnostic queries are read-only once the store is open,
+but the full command invocation may have those existing `Store.Open` effects.
+Digits, opaque references, timestamps, and exact metrics may identify local
+data; neither text nor JSON is automatically safe to publish. See
+[diagnostic inspection and reviewed export](diagnostic-inspection-contract.md)
+and [backups](backups.md) before sharing or upgrading existing data.
+
+### `diagnostics export`
+
+```text
+komposyn-lg diagnostics export <full-problem-id>... --output <path>
+  [--data-dir <path>] [--include-logs] [--log-limit <1-200>]
+```
+
+Select one or more exact detailed problem IDs. Every selected detail must have
+been marked reviewed for its current evidence revision, and core re-fetches
+the details when preparing the export. The command prints the exact bounded
+versioned JSON projection, then asks for explicit consent. Only an affirmative
+answer creates a private new file; an existing file or destination symlink is
+not replaced. EOF and an unrecognized answer do not consent. The output path
+is caller selected. The command does not upload, attach, or open the file.
+In the REPL, quote destination paths that contain spaces.
+
+Associated logs are excluded unless `--include-logs` is present. That option
+shows a bounded numbered list from managed local logs and asks which exact rows
+to include; blank means no logs. `--log-limit` controls the maximum rows shown
+and is valid only with `--include-logs`. The displayed selection can be
+incomplete under reader limits; unshown records cannot be selected. Exported
+log fields are separately allowlisted and omit timestamps, process/run IDs,
+file names, and messages. Diagnostic counts and classifications may still
+identify local activity, so inspect the preview before consenting. Opening
+SQLite can perform the normal `Store.Open` migration and catalog synchronization.
+
 ### `logs show`
 
 ```text
@@ -388,6 +446,28 @@ selection snapshot. Stable IDs can still be supplied directly for project and
 session selection. Project, session, and model navigation tables use compact
 decimal token counts consistently; use the corresponding JSON or CSV resource
 commands when exact integers are required.
+
+Persisted diagnostic details can be inspected or reviewed without changing
+the current report range or navigation:
+
+```text
+/diagnostics [list]
+/diagnostics show <problem-id>
+/diagnostics review <problem-id> <reviewed|skipped>
+/diagnostics export <full-problem-id>... --output <path> [--include-logs] [--log-limit <1-200>]
+```
+
+List uses one bounded page and prints the continuation token for a subsequent
+noninteractive `diagnostics list --continuation <token>` request. Review is a
+local compare-and-set action and does not mean the operational condition was
+resolved or consent to export. These commands use the already-open store; its
+normal migration/catalog synchronization behavior still applies.
+
+Export requires current reviewed evidence, shows its exact bounded JSON
+projection before consent, and creates a private new file only after an
+affirmative response. Logs require the separate `--include-logs` opt-in and
+numbered row selection; blank selection includes none. The REPL uses its
+already-open database and does not accept `--data-dir` for this command.
 
 Use `/range` to show the mode and effective UTC bounds. `/range <from> <to>`
 pins an explicit half-open range (accepting ISO-8601 dates or timestamps),
