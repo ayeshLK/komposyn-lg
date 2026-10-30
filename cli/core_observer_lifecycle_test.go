@@ -453,6 +453,80 @@ func TestCoreObserverDeduplicatesEmbeddedLeaseAcquisitionFailure(t *testing.T) {
 	}
 }
 
+func TestCoreObserverDeduplicatesEmbeddedPollPersistenceFailures(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		trigger string
+	}{
+		{
+			name: "begin",
+			trigger: `CREATE TRIGGER reject_poll_begin BEFORE UPDATE ON collector_runtime
+				WHEN NEW.last_poll_at IS NOT NULL AND NEW.last_poll_at IS NOT OLD.last_poll_at
+				BEGIN SELECT RAISE(ABORT, 'synthetic private poll begin failure'); END`,
+		},
+		{
+			name: "complete",
+			trigger: `CREATE TRIGGER reject_poll_complete BEFORE UPDATE ON collector_runtime
+				WHEN NEW.last_completed_at IS NOT NULL AND OLD.last_completed_at IS NULL
+				BEGIN SELECT RAISE(ABORT, 'synthetic private poll complete failure'); END`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			logDir := t.TempDir()
+			logger := newObservedTestLogger(t, logDir)
+			dbPath := filepath.Join(t.TempDir(), "usage.sqlite")
+			store, err := openStoreWithLog(dbPath, logger, appCommandInteractive)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+			installCollectorRuntimeTrigger(t, dbPath, tc.trigger)
+
+			if tc.name == "begin" {
+				if _, err := startInteractiveCollectorWithLogger(store, nil, time.Second, logger); err == nil {
+					t.Fatal("embedded collector poll began despite rejecting trigger")
+				}
+			} else {
+				runtime, err := startInteractiveCollectorWithLogger(store, nil, time.Second, logger)
+				if err != nil {
+					t.Fatalf("start embedded collector before complete failure: %v", err)
+				}
+				runtime.stop()
+			}
+
+			logger.Close()
+			records := managedCoreRecords(t, logDir)
+			coreFailures, genericStoreFailures := 0, 0
+			for _, record := range records {
+				if record.Event == "core.diagnostic" && record.Code == "core_operation_failed" && record.CoreDetails["core_operation"] == "heartbeat" {
+					coreFailures++
+				}
+				if record.Event == "collector.failed" && record.Code == "collector_store" {
+					genericStoreFailures++
+				}
+			}
+			if coreFailures != 1 || genericStoreFailures != 0 {
+				t.Fatalf("%s poll persistence failure was duplicated or lost: core=%d generic=%d records=%+v", tc.name, coreFailures, genericStoreFailures, records)
+			}
+		})
+	}
+}
+
+func installCollectorRuntimeTrigger(t *testing.T, dbPath, statement string) {
+	t.Helper()
+	triggerDB, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := triggerDB.Exec(statement); err != nil {
+		_ = triggerDB.Close()
+		t.Fatal(err)
+	}
+	if err := triggerDB.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCoreObserverConcurrentFailuresRaceBoundedClose(t *testing.T) {
 	logDir := t.TempDir()
 	logger := newObservedTestLogger(t, logDir)

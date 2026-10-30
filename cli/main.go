@@ -317,7 +317,7 @@ func startInteractiveCollectorWithLogger(store *tokenlogger.Store, roots []token
 		return nil, err
 	}
 	if err := store.BeginCollectorPoll(instance, len(roots)); err != nil {
-		logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandInteractive, 2)
+		logger.CoreFailure(err, appLogCollectorFailed, appLogCodeCollectorStore, appCommandInteractive, 2)
 		if releaseErr := store.ReleaseCollectorLease(instance, "failed", err.Error()); releaseErr != nil {
 			logger.CoreFailure(releaseErr, appLogCollectorFailed, appLogCodeCollectorRelease, appCommandInteractive, 2)
 		}
@@ -361,7 +361,7 @@ func startInteractiveCollectorWithLogger(store *tokenlogger.Store, roots []token
 			logPollFailureEpisode(logger, appCommandInteractive, ctx, pollErr, nil, false, &pollFailureActive)
 			health := collector.Health()
 			if err := store.CompleteCollectorPoll(instance, result, health, pollErr); err != nil {
-				logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandInteractive, 2)
+				logger.CoreFailure(err, appLogCollectorFailed, appLogCodeCollectorStore, appCommandInteractive, 2)
 				return
 			}
 			runHealth = accumulateWatchHealth(runHealth, result, health)

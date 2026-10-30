@@ -706,7 +706,7 @@ func runForegroundWatchWithLogger(args []string, stdout, stderr io.Writer, ctx c
 		}
 		if err := store.BeginCollectorPoll(instanceID, len(roots)); err != nil {
 			terminalState, terminalError = "failed", err.Error()
-			logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
+			logger.CoreFailure(err, appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
 			fmt.Fprintf(stderr, "begin foreground collector poll: %v\n", err)
 			return 2
 		}
@@ -729,7 +729,7 @@ func runForegroundWatchWithLogger(args []string, stdout, stderr io.Writer, ctx c
 		runHealth = accumulateWatchHealth(runHealth, result, health)
 		if err := store.CompleteCollectorPoll(instanceID, result, health, pollErr); err != nil {
 			terminalState, terminalError = "failed", err.Error()
-			logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
+			logger.CoreFailure(err, appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
 			fmt.Fprintf(stderr, "complete foreground collector poll: %v\n", err)
 			return 2
 		}
@@ -951,7 +951,7 @@ func runWatchServeWithLogger(args []string, stderr io.Writer, ctx context.Contex
 		}
 		if err := store.BeginCollectorPoll(options.instanceID, len(sources)); err != nil {
 			terminalState, terminalError = "failed", err.Error()
-			logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
+			logger.CoreFailure(err, appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
 			return 2
 		}
 		collector, err := tokenlogger.NewCollector(store, roots, options.interval)
@@ -973,7 +973,7 @@ func runWatchServeWithLogger(args []string, stderr io.Writer, ctx context.Contex
 		runHealth = accumulateWatchHealth(runHealth, result, health)
 		if err := store.CompleteCollectorPoll(options.instanceID, result, health, pollErr); err != nil {
 			terminalState, terminalError = "failed", err.Error()
-			logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
+			logger.CoreFailure(err, appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
 			return 2
 		}
 		if err := updateRegisteredSourceHealth(store, sources, health); err != nil {
