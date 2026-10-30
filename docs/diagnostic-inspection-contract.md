@@ -34,9 +34,10 @@ side effects and must not be described as strictly read-only. `diagnostics
 list` returns one bounded core page; use `next_token` as `--continuation` with
 the same page size and filters. Core binds continuation to that query. Human
 output prints a continuation token; JSON preserves the versioned core page.
-`show` exposes only core's bounded projection. `review` uses compare-and-set
-with the current evidence revision and accepts only reviewed/skipped changes;
-review state remains distinct from active/resolved/unknown condition.
+`show` exposes only core's bounded projection. `review` requires the expected
+evidence revision displayed by list/show, uses core compare-and-set, and
+accepts only reviewed/skipped changes; review state remains distinct from
+active/resolved/unknown condition.
 
 ## Reviewed export
 
