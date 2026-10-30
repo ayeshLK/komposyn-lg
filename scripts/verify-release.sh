@@ -5,7 +5,7 @@ dist_dir="${1:?usage: verify-release.sh <release-dir> [verified-reference-binary
 reference_binary="${2:-}"
 expected_target="${3:-}"
 expected_schema_transition="${4:-}"
-expected_candidate_schema=17
+expected_candidate_schema=18
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 version="$(sed -n 's/^# version=//p' "$dist_dir/SHA256SUMS" | head -1)"
 if [[ -z "$version" ]]; then
@@ -235,7 +235,7 @@ try:
     version = db.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
 finally:
     db.close()
-if integrity != "ok" or (source, target, version) != (15, 17, 15):
+if integrity != "ok" or (source, target, version) != (15, 18, 15):
     raise SystemExit(f"failed-migration backup metadata/integrity mismatch: {integrity}, {source}->{target}, schema={version}")
 PY
     recovery_dir="$tmp_dir/migration-failure-recovery"
@@ -428,10 +428,10 @@ PY
       echo "compatible reference binary could not read the restored pre-migration backup" >&2
       exit 1
     }
-    if [[ "$expected_schema_transition" == "15:17" ]]; then
+    if [[ "$expected_schema_transition" == "15:18" ]]; then
       restored_schema="$(database_schema_version "$recovery_dir/token-logger.db")"
       [[ "$restored_schema" == 15 ]] || { echo "restored backup schema is $restored_schema; expected 15" >&2; exit 1; }
-      # The shipped v0.8.1 binary must refuse the schema-17 database without
+      # The shipped v0.8.1 binary must refuse the schema-18 database without
       # changing the database or creating/removing SQLite sidecars.
       refusal_before="$(python3 - "$data_dir/token-logger.db" <<'PY'
 import hashlib
@@ -449,11 +449,11 @@ PY
         refusal_data_dir="$(cygpath -w "$data_dir")"
       fi
       if TOKEN_LOGGER_DATA_DIR="$refusal_data_dir" "$reference_binary" usage --format json >"$tmp_dir/old-schema-refusal.txt" 2>&1; then
-        echo "CLI v0.8.1 unexpectedly opened the schema-17 database" >&2
+        echo "CLI v0.8.1 unexpectedly opened the schema-18 database" >&2
         exit 1
       fi
       grep -Fq 'newer than supported version' "$tmp_dir/old-schema-refusal.txt" || {
-        echo "CLI v0.8.1 failed for an unexpected reason instead of refusing schema 17: $(cat "$tmp_dir/old-schema-refusal.txt")" >&2
+        echo "CLI v0.8.1 failed for an unexpected reason instead of refusing schema 18: $(cat "$tmp_dir/old-schema-refusal.txt")" >&2
         exit 1
       }
       refusal_after="$(python3 - "$data_dir/token-logger.db" <<'PY'
@@ -468,7 +468,7 @@ for suffix in ("", "-wal", "-shm"):
 PY
 )"
       [[ "$refusal_after" == "$refusal_before" ]] || {
-        echo "CLI v0.8.1 refusal changed schema-17 database/sidecars: before=$refusal_before after=$refusal_after" >&2
+        echo "CLI v0.8.1 refusal changed schema-18 database/sidecars: before=$refusal_before after=$refusal_after" >&2
         exit 1
       }
       cat >>"$source_dir/codex.jsonl" <<'EOF'
