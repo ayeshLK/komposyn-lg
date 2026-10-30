@@ -563,7 +563,7 @@ func runWatchStopWithLogger(args []string, stdout, stderr io.Writer, logger appl
 	}
 	requested, err := store.RequestCollectorStop()
 	if err != nil {
-		logger.Event(appLogCommandFailed, appLogCodeCollectorStop, appCommandWatch, 2)
+		logger.CoreFailure(err, appLogCommandFailed, appLogCodeCollectorStop, appCommandWatch, 2)
 		store.Close()
 		fmt.Fprintf(stderr, "request collector stop: %v\n", err)
 		return 2
@@ -643,7 +643,7 @@ func runForegroundWatchWithLogger(args []string, stdout, stderr io.Writer, ctx c
 		return 2
 	}
 	if err != nil {
-		logger.Event(appLogCollectorFailed, appLogCodeCollectorAcquire, appCommandWatch, 2)
+		logger.CoreFailure(err, appLogCollectorFailed, appLogCodeCollectorAcquire, appCommandWatch, 2)
 		fmt.Fprintf(stderr, "acquire foreground collector lease: %v\n", err)
 		return 2
 	}
@@ -651,7 +651,7 @@ func runForegroundWatchWithLogger(args []string, stdout, stderr io.Writer, ctx c
 	logger.Event(appLogCollectorStarted, appLogCodeNone, appCommandWatch, 0)
 	defer func() {
 		if releaseErr := store.ReleaseCollectorLease(instanceID, terminalState, terminalError); releaseErr != nil {
-			logger.Event(appLogCollectorFailed, appLogCodeCollectorRelease, appCommandWatch, 2)
+			logger.CoreFailure(releaseErr, appLogCollectorFailed, appLogCodeCollectorRelease, appCommandWatch, 2)
 		}
 		if terminalState != "failed" {
 			logger.Event(appLogCollectorStopped, appLogCodeNone, appCommandWatch, 0)
@@ -659,7 +659,7 @@ func runForegroundWatchWithLogger(args []string, stdout, stderr io.Writer, ctx c
 	}()
 	if err := store.MarkCollectorReady(instanceID); err != nil {
 		terminalState, terminalError = "failed", err.Error()
-		logger.Event(appLogCollectorFailed, appLogCodeCollectorReadiness, appCommandWatch, 2)
+		logger.CoreFailure(err, appLogCollectorFailed, appLogCodeCollectorReadiness, appCommandWatch, 2)
 		fmt.Fprintf(stderr, "publish foreground collector readiness: %v\n", err)
 		return 2
 	}
@@ -680,7 +680,7 @@ func runForegroundWatchWithLogger(args []string, stdout, stderr io.Writer, ctx c
 		stop, heartbeatErr := store.HeartbeatCollector(instanceID)
 		if heartbeatErr != nil {
 			terminalState, terminalError = "failed", heartbeatErr.Error()
-			logger.Event(appLogCollectorFailed, appLogCodeCollectorHeartbeat, appCommandWatch, 2)
+			logger.CoreFailure(heartbeatErr, appLogCollectorFailed, appLogCodeCollectorHeartbeat, appCommandWatch, 2)
 			fmt.Fprintf(stderr, "foreground collector heartbeat: %v\n", heartbeatErr)
 			return 2
 		}
@@ -706,14 +706,14 @@ func runForegroundWatchWithLogger(args []string, stdout, stderr io.Writer, ctx c
 		}
 		if err := store.BeginCollectorPoll(instanceID, len(roots)); err != nil {
 			terminalState, terminalError = "failed", err.Error()
-			logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
+			logger.CoreFailure(err, appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
 			fmt.Fprintf(stderr, "begin foreground collector poll: %v\n", err)
 			return 2
 		}
 		stop, heartbeatErr = store.HeartbeatCollector(instanceID)
 		if heartbeatErr != nil {
 			terminalState, terminalError = "failed", heartbeatErr.Error()
-			logger.Event(appLogCollectorFailed, appLogCodeCollectorHeartbeat, appCommandWatch, 2)
+			logger.CoreFailure(heartbeatErr, appLogCollectorFailed, appLogCodeCollectorHeartbeat, appCommandWatch, 2)
 			fmt.Fprintf(stderr, "foreground collector heartbeat: %v\n", heartbeatErr)
 			return 2
 		}
@@ -729,7 +729,7 @@ func runForegroundWatchWithLogger(args []string, stdout, stderr io.Writer, ctx c
 		runHealth = accumulateWatchHealth(runHealth, result, health)
 		if err := store.CompleteCollectorPoll(instanceID, result, health, pollErr); err != nil {
 			terminalState, terminalError = "failed", err.Error()
-			logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
+			logger.CoreFailure(err, appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
 			fmt.Fprintf(stderr, "complete foreground collector poll: %v\n", err)
 			return 2
 		}
@@ -747,7 +747,7 @@ func runForegroundWatchWithLogger(args []string, stdout, stderr io.Writer, ctx c
 		logCollectorHealthAndSummary(logger, appCommandWatch, health.Status, pollDuration, result, runHealth, &lastHealthStatus, &lastSummaryAt)
 		if heartbeatErr != nil {
 			terminalState, terminalError = "failed", heartbeatErr.Error()
-			logger.Event(appLogCollectorFailed, appLogCodeCollectorHeartbeat, appCommandWatch, 2)
+			logger.CoreFailure(heartbeatErr, appLogCollectorFailed, appLogCodeCollectorHeartbeat, appCommandWatch, 2)
 			fmt.Fprintf(stderr, "foreground collector heartbeat: %v\n", heartbeatErr)
 			return 2
 		}
@@ -758,7 +758,7 @@ func runForegroundWatchWithLogger(args []string, stdout, stderr io.Writer, ctx c
 		stop, heartbeatErr = waitWithLeaseHeartbeat(ctx, store, instanceID, interval, staleWindow(interval))
 		if heartbeatErr != nil {
 			terminalState, terminalError = "failed", heartbeatErr.Error()
-			logger.Event(appLogCollectorFailed, appLogCodeCollectorHeartbeat, appCommandWatch, 2)
+			logger.CoreFailure(heartbeatErr, appLogCollectorFailed, appLogCodeCollectorHeartbeat, appCommandWatch, 2)
 			fmt.Fprintf(stderr, "foreground collector heartbeat: %v\n", heartbeatErr)
 			return 2
 		}
@@ -814,7 +814,7 @@ func expectedCollectorPollCancellation(ctx context.Context, err error, cooperati
 func logPollFailureEpisode(logger applicationLog, command appCommand, ctx context.Context, pollErr, heartbeatErr error, cooperativeStop bool, active *bool) bool {
 	unexpected := pollErr != nil && heartbeatErr == nil && !expectedCollectorPollCancellation(ctx, pollErr, cooperativeStop)
 	if unexpected && !*active {
-		logger.Event(appLogCollectorFailed, appLogCodeCollectorPoll, command, 2)
+		logger.CoreFailure(pollErr, appLogCollectorFailed, appLogCodeCollectorPoll, command, 2)
 	}
 	*active = unexpected
 	return unexpected
@@ -903,7 +903,7 @@ func runWatchServeWithLogger(args []string, stderr io.Writer, ctx context.Contex
 		return 0
 	}
 	if err != nil {
-		logger.Event(appLogCollectorFailed, appLogCodeCollectorAcquire, appCommandWatch, 2)
+		logger.CoreFailure(err, appLogCollectorFailed, appLogCodeCollectorAcquire, appCommandWatch, 2)
 		fmt.Fprintf(stderr, "acquire collector lease: %v\n", err)
 		return 2
 	}
@@ -911,7 +911,7 @@ func runWatchServeWithLogger(args []string, stderr io.Writer, ctx context.Contex
 	logger.Event(appLogCollectorStarted, appLogCodeNone, appCommandWatch, 0)
 	defer func() {
 		if releaseErr := store.ReleaseCollectorLease(options.instanceID, terminalState, terminalError); releaseErr != nil {
-			logger.Event(appLogCollectorFailed, appLogCodeCollectorRelease, appCommandWatch, 2)
+			logger.CoreFailure(releaseErr, appLogCollectorFailed, appLogCodeCollectorRelease, appCommandWatch, 2)
 		}
 		if terminalState != "failed" {
 			logger.Event(appLogCollectorStopped, appLogCodeNone, appCommandWatch, 0)
@@ -919,7 +919,7 @@ func runWatchServeWithLogger(args []string, stderr io.Writer, ctx context.Contex
 	}()
 	if err := store.MarkCollectorReady(options.instanceID); err != nil {
 		terminalState, terminalError = "failed", err.Error()
-		logger.Event(appLogCollectorFailed, appLogCodeCollectorReadiness, appCommandWatch, 2)
+		logger.CoreFailure(err, appLogCollectorFailed, appLogCodeCollectorReadiness, appCommandWatch, 2)
 		return 2
 	}
 	if recovered {
@@ -933,7 +933,7 @@ func runWatchServeWithLogger(args []string, stderr io.Writer, ctx context.Contex
 		stop, heartbeatErr := store.HeartbeatCollector(options.instanceID)
 		if heartbeatErr != nil {
 			terminalState, terminalError = "failed", heartbeatErr.Error()
-			logger.Event(appLogCollectorFailed, appLogCodeCollectorHeartbeat, appCommandWatch, 2)
+			logger.CoreFailure(heartbeatErr, appLogCollectorFailed, appLogCodeCollectorHeartbeat, appCommandWatch, 2)
 			return 2
 		}
 		if stop || ctx.Err() != nil {
@@ -951,7 +951,7 @@ func runWatchServeWithLogger(args []string, stderr io.Writer, ctx context.Contex
 		}
 		if err := store.BeginCollectorPoll(options.instanceID, len(sources)); err != nil {
 			terminalState, terminalError = "failed", err.Error()
-			logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
+			logger.CoreFailure(err, appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
 			return 2
 		}
 		collector, err := tokenlogger.NewCollector(store, roots, options.interval)
@@ -966,14 +966,14 @@ func runWatchServeWithLogger(args []string, stderr io.Writer, ctx context.Contex
 		logPollFailureEpisode(logger, appCommandWatch, ctx, pollErr, heartbeatErr, stop, &pollFailureActive)
 		if heartbeatErr != nil {
 			terminalState, terminalError = "failed", heartbeatErr.Error()
-			logger.Event(appLogCollectorFailed, appLogCodeCollectorHeartbeat, appCommandWatch, 2)
+			logger.CoreFailure(heartbeatErr, appLogCollectorFailed, appLogCodeCollectorHeartbeat, appCommandWatch, 2)
 			return 2
 		}
 		health := collector.Health()
 		runHealth = accumulateWatchHealth(runHealth, result, health)
 		if err := store.CompleteCollectorPoll(options.instanceID, result, health, pollErr); err != nil {
 			terminalState, terminalError = "failed", err.Error()
-			logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
+			logger.CoreFailure(err, appLogCollectorFailed, appLogCodeCollectorStore, appCommandWatch, 2)
 			return 2
 		}
 		if err := updateRegisteredSourceHealth(store, sources, health); err != nil {
@@ -989,7 +989,7 @@ func runWatchServeWithLogger(args []string, stderr io.Writer, ctx context.Contex
 		stop, heartbeatErr = waitWithLeaseHeartbeat(ctx, store, options.instanceID, options.interval, staleWindow(options.interval))
 		if heartbeatErr != nil {
 			terminalState, terminalError = "failed", heartbeatErr.Error()
-			logger.Event(appLogCollectorFailed, appLogCodeCollectorHeartbeat, appCommandWatch, 2)
+			logger.CoreFailure(heartbeatErr, appLogCollectorFailed, appLogCodeCollectorHeartbeat, appCommandWatch, 2)
 			return 2
 		}
 		if stop || ctx.Err() != nil {
