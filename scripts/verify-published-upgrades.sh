@@ -65,4 +65,4 @@ v070_binary="$(verify_release_assets v0.7.0 "$temp_dir/v0.7.0" "komposyn-lg_0.7.
 v081_binary="$(verify_release_assets v0.8.1 "$temp_dir/v0.8.1" "komposyn-lg_0.8.1_${target}.${archive_suffix}" ayeshLK/komposyn-lg '^https://github.com/ayeshLK/komposyn-lg/.github/workflows/release.yml@refs/heads/master$')"
 bash "$(dirname "${BASH_SOURCE[0]}")/verify-release.sh" "$candidate_dir" "$v060_binary" "$target"
 bash "$(dirname "${BASH_SOURCE[0]}")/verify-release.sh" "$candidate_dir" "$v070_binary" "$target"
-bash "$(dirname "${BASH_SOURCE[0]}")/verify-release.sh" "$candidate_dir" "$v081_binary" "$target" 15:17
+bash "$(dirname "${BASH_SOURCE[0]}")/verify-release.sh" "$candidate_dir" "$v081_binary" "$target" 15:18

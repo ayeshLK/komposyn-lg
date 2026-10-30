@@ -4,10 +4,10 @@ $releaseDir = Join-Path $temp 'release'
 $installDir = Join-Path $temp 'install'
 New-Item -ItemType Directory -Path $releaseDir, $installDir -Force | Out-Null
 try {
-    & (Join-Path $PSScriptRoot 'verify-cli-version-output.ps1') -Output 'komposyn-lg 0.10.0 (core 0.9.0)' -ExpectedCliVersion '0.10.0' -ExpectedCoreVersion '0.9.0'
+    & (Join-Path $PSScriptRoot 'verify-cli-version-output.ps1') -Output 'komposyn-lg 0.10.0 (core 0.10.0)' -ExpectedCliVersion '0.10.0' -ExpectedCoreVersion '0.10.0'
     foreach ($incorrect in @(
-        @{ Output = 'komposyn-lg 0.10.0 (core 0.8.0)'; Cli = '0.10.0'; Core = '0.9.0' },
-        @{ Output = 'komposyn-lg 0.9.0 (core 0.9.0)'; Cli = '0.10.0'; Core = '0.9.0' }
+        @{ Output = 'komposyn-lg 0.10.0 (core 0.9.0)'; Cli = '0.10.0'; Core = '0.10.0' },
+        @{ Output = 'komposyn-lg 0.9.0 (core 0.10.0)'; Cli = '0.10.0'; Core = '0.10.0' }
     )) {
         $rejected = $false
         try {

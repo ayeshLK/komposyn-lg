@@ -17,14 +17,14 @@ set -euo pipefail
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 core_version="$(bash "$root_dir/scripts/resolve-release-core-version.sh")"
-[[ "$core_version" == 0.9.0 ]] || { echo "unexpected validated release core: $core_version" >&2; exit 1; }
+[[ "$core_version" == 0.10.0 ]] || { echo "unexpected validated release core: $core_version" >&2; exit 1; }
 
-bash "$root_dir/scripts/verify-cli-version-output.sh" 'komposyn-lg 0.10.0 (core 0.9.0)' 0.10.0 0.9.0
-if bash "$root_dir/scripts/verify-cli-version-output.sh" 'komposyn-lg 0.10.0 (core 0.8.0)' 0.10.0 0.9.0 >/dev/null 2>&1; then
+bash "$root_dir/scripts/verify-cli-version-output.sh" 'komposyn-lg 0.10.0 (core 0.10.0)' 0.10.0 0.10.0
+if bash "$root_dir/scripts/verify-cli-version-output.sh" 'komposyn-lg 0.10.0 (core 0.9.0)' 0.10.0 0.10.0 >/dev/null 2>&1; then
 	echo 'accepted stale core version metadata' >&2
 	exit 1
 fi
-if bash "$root_dir/scripts/verify-cli-version-output.sh" 'komposyn-lg 0.9.0 (core 0.9.0)' 0.10.0 0.9.0 >/dev/null 2>&1; then
+if bash "$root_dir/scripts/verify-cli-version-output.sh" 'komposyn-lg 0.9.0 (core 0.10.0)' 0.10.0 0.10.0 >/dev/null 2>&1; then
 	echo 'accepted incorrect CLI version metadata' >&2
 	exit 1
 fi
@@ -52,10 +52,10 @@ fi
 successful_resolver="$tmp_dir/successful-resolver.sh"
 cat > "$successful_resolver" <<'EOF'
 #!/usr/bin/env bash
-printf '%s\n' '0.9.0'
+printf '%s\n' '0.10.0'
 EOF
 bash "$root_dir/scripts/write-release-core-version-output.sh" "$output_file" "$successful_resolver"
-[[ "$(cat "$output_file")" == 'version=0.9.0' ]] || { echo 'release core output helper wrote an unexpected output' >&2; exit 1; }
+[[ "$(cat "$output_file")" == 'version=0.10.0' ]] || { echo 'release core output helper wrote an unexpected output' >&2; exit 1; }
 
 python3 - "$root_dir/.github/workflows/release.yml" "$root_dir/scripts/build-release.sh" "$root_dir/scripts/write-release-core-version-output.sh" <<'PY'
 import sys

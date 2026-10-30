@@ -172,6 +172,11 @@ func runWithInputAndLogger(args []string, input io.Reader, stdout, stderr io.Wri
 		return runSettingsWithLogger(args[1:], stdout, stderr, logger)
 	case "report-issue":
 		return runReportIssueWithLogger(args[1:], stdout, stderr, logger)
+	case "diagnostics":
+		if len(args) > 1 && args[1] == "export" {
+			return runDiagnosticExport(args[2:], input, stdout, stderr, logger)
+		}
+		return runDiagnosticDetails(args[1:], stdout, stderr, logger)
 	case "logs":
 		return runLogs(args[1:], stdout, stderr, os.Getenv("TOKEN_LOGGER_LOG_DIR"), os.UserHomeDir)
 	default:
@@ -197,9 +202,13 @@ func openStoreWithLog(path string, logger applicationLog, command appCommand) (*
 	if logger == nil {
 		logger = discardApplicationLog{}
 	}
-	store, err := tokenlogger.Open(path)
+	observer := logger.CoreObserver(command)
+	store, err := tokenlogger.OpenWithObservation(path, tokenlogger.OpenOptions{}, observer)
 	if err != nil {
-		logger.Event(appLogCommandFailed, appLogCodeDatabaseOpen, command, 2)
+		// Keep a generic fallback keyed to core's operation ID until the
+		// matching safe event reaches the sink. Queue admission alone is not
+		// treated as durable evidence.
+		logger.CoreFailure(err, appLogCommandFailed, appLogCodeDatabaseOpen, command, 2)
 		return nil, err
 	}
 	return store, nil
@@ -296,21 +305,21 @@ func startInteractiveCollectorWithLogger(store *tokenlogger.Store, roots []token
 	}
 	if _, err := store.AcquireCollectorLease(instance, os.Getpid(), cliVersion, "embedded", interval, staleWindow(interval)); err != nil {
 		if !errors.Is(err, tokenlogger.ErrCollectorActive) {
-			logger.Event(appLogCollectorFailed, appLogCodeCollectorAcquire, appCommandInteractive, 2)
+			logger.CoreFailure(err, appLogCollectorFailed, appLogCodeCollectorAcquire, appCommandInteractive, 2)
 		}
 		return nil, err
 	}
 	if err := store.MarkCollectorReady(instance); err != nil {
-		logger.Event(appLogCollectorFailed, appLogCodeCollectorReadiness, appCommandInteractive, 2)
+		logger.CoreFailure(err, appLogCollectorFailed, appLogCodeCollectorReadiness, appCommandInteractive, 2)
 		if releaseErr := store.ReleaseCollectorLease(instance, "failed", err.Error()); releaseErr != nil {
-			logger.Event(appLogCollectorFailed, appLogCodeCollectorRelease, appCommandInteractive, 2)
+			logger.CoreFailure(releaseErr, appLogCollectorFailed, appLogCodeCollectorRelease, appCommandInteractive, 2)
 		}
 		return nil, err
 	}
 	if err := store.BeginCollectorPoll(instance, len(roots)); err != nil {
-		logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandInteractive, 2)
+		logger.CoreFailure(err, appLogCollectorFailed, appLogCodeCollectorStore, appCommandInteractive, 2)
 		if releaseErr := store.ReleaseCollectorLease(instance, "failed", err.Error()); releaseErr != nil {
-			logger.Event(appLogCollectorFailed, appLogCodeCollectorRelease, appCommandInteractive, 2)
+			logger.CoreFailure(releaseErr, appLogCollectorFailed, appLogCodeCollectorRelease, appCommandInteractive, 2)
 		}
 		return nil, err
 	}
@@ -320,7 +329,7 @@ func startInteractiveCollectorWithLogger(store *tokenlogger.Store, roots []token
 		defer close(runtime.done)
 		defer func() {
 			if err := store.ReleaseCollectorLease(instance, "stopped", ""); err != nil {
-				logger.Event(appLogCollectorFailed, appLogCodeCollectorRelease, appCommandInteractive, 2)
+				logger.CoreFailure(err, appLogCollectorFailed, appLogCodeCollectorRelease, appCommandInteractive, 2)
 			}
 		}()
 		lastHealthStatus := ""
@@ -340,7 +349,7 @@ func startInteractiveCollectorWithLogger(store *tokenlogger.Store, roots []token
 					stop, heartbeatErr := store.HeartbeatCollector(instance)
 					if stop || heartbeatErr != nil {
 						if heartbeatErr != nil {
-							logger.Event(appLogCollectorFailed, appLogCodeCollectorHeartbeat, appCommandInteractive, 2)
+							logger.CoreFailure(heartbeatErr, appLogCollectorFailed, appLogCodeCollectorHeartbeat, appCommandInteractive, 2)
 						}
 						cancel()
 						return
@@ -352,7 +361,7 @@ func startInteractiveCollectorWithLogger(store *tokenlogger.Store, roots []token
 			logPollFailureEpisode(logger, appCommandInteractive, ctx, pollErr, nil, false, &pollFailureActive)
 			health := collector.Health()
 			if err := store.CompleteCollectorPoll(instance, result, health, pollErr); err != nil {
-				logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandInteractive, 2)
+				logger.CoreFailure(err, appLogCollectorFailed, appLogCodeCollectorStore, appCommandInteractive, 2)
 				return
 			}
 			runHealth = accumulateWatchHealth(runHealth, result, health)
@@ -824,6 +833,29 @@ func runInteractiveLoopWithClockAndRootsAndLogger(reader interactiveLineReader, 
 			if interactiveRenderWithLogger(stdout, stderr, store, &state, reader, now, logger) {
 				return 0
 			}
+		case "/diagnostics":
+			args := strings.Fields(selector)
+			if len(args) == 0 {
+				args = []string{"list"}
+			}
+			if args[0] == "export" {
+				parsedArgs, parseErr := parseDiagnosticExportREPLArgs(selector)
+				if parseErr != nil {
+					fmt.Fprintln(stdout, "usage: /diagnostics export <full-problem-id>... --output <path> [--include-logs] [--log-limit <1-200>]")
+					continue
+				}
+				args = parsedArgs
+				if containsHelpFlag(args) {
+					_ = runHelp([]string{"help", "diagnostics", "export"}, stdout, stderr)
+					continue
+				}
+				_ = runDiagnosticExportForStoreArgs(args[1:], stdout, stderr, store, reader)
+				continue
+			}
+			if len(args) >= 3 && args[0] == "review" && !strings.HasPrefix(args[2], "--") {
+				args = append([]string{"review", args[1], "--state", args[2]}, args[3:]...)
+			}
+			_ = runDiagnosticDetailsForStore(args, stdout, stderr, logger, store)
 		case "/project":
 			if selector == "" {
 				fmt.Fprintln(stdout, "usage: /project <row-number|unambiguous-name|stable-id>")
@@ -1388,6 +1420,12 @@ Reports
 Session
   /status                    Versions, data directory, collector, last report query
   /settings                  Saved preferences and current runtime information
+  /diagnostics [list]        List bounded diagnostic details
+  /diagnostics show <id>     Inspect a detailed problem ID
+  /diagnostics review <id> <reviewed|skipped>  Mark local review state
+  /diagnostics export <id>... --output <path>  Preview, consent, and export reviewed evidence
+  /diagnostics review <id> <reviewed|skipped> --expected-revision <revision>
+                              Mark the evidence revision you inspected
   /report-issue              Inspect pending local diagnostics
   /clear                     Clear the visible terminal
   /help                      Show these commands
