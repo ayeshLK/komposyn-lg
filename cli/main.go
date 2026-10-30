@@ -831,8 +831,8 @@ func runInteractiveLoopWithClockAndRootsAndLogger(reader interactiveLineReader, 
 			if len(args) == 0 {
 				args = []string{"list"}
 			}
-			if len(args) == 3 && args[0] == "review" && !strings.HasPrefix(args[2], "--") {
-				args = []string{"review", args[1], "--state", args[2]}
+			if len(args) >= 3 && args[0] == "review" && !strings.HasPrefix(args[2], "--") {
+				args = append([]string{"review", args[1], "--state", args[2]}, args[3:]...)
 			}
 			_ = runDiagnosticDetailsForStore(args, stdout, stderr, logger, store)
 		case "/project":
@@ -1401,7 +1401,8 @@ Session
   /settings                  Saved preferences and current runtime information
   /diagnostics [list]        List bounded diagnostic details
   /diagnostics show <id>     Inspect a detailed problem ID
-  /diagnostics review <id> <reviewed|skipped>  Mark local review state
+  /diagnostics review <id> <reviewed|skipped> --expected-revision <revision>
+                              Mark the evidence revision you inspected
   /report-issue              Inspect pending local diagnostics
   /clear                     Clear the visible terminal
   /help                      Show these commands

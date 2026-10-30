@@ -7,7 +7,7 @@ diagnostics into an issue.
 
 For persisted detailed evidence, use `komposyn-lg diagnostics list` and
 `komposyn-lg diagnostics show <problem-id>`. Review is separate:
-`komposyn-lg diagnostics review <problem-id> --state reviewed|skipped` records
+`komposyn-lg diagnostics review <problem-id> --state reviewed|skipped --expected-revision <revision>` records
 only review state and does not resolve a condition. List pagination uses the
 returned `next_token` as `--continuation`. Detailed problem IDs are distinct
 from legacy diagnostic fingerprints; older evidence may remain unavailable.

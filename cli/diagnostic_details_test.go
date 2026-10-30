@@ -115,7 +115,16 @@ func TestDiagnosticDetailsListShowPaginationAndReview(t *testing.T) {
 	}
 	stdout.Reset()
 	stderr.Reset()
-	if code := run([]string{"diagnostics", "review", problemID, "--state", "reviewed", "--data-dir", dataDir}, &stdout, &stderr); code != 0 {
+	revision := ""
+	for _, item := range items {
+		if item.ProblemID == problemID {
+			revision = item.Review.EvidenceRevision
+		}
+	}
+	if revision == "" {
+		t.Fatal("seed detail missing evidence revision")
+	}
+	if code := run([]string{"diagnostics", "review", problemID, "--state", "reviewed", "--expected-revision", revision, "--data-dir", dataDir}, &stdout, &stderr); code != 0 {
 		t.Fatalf("review exit=%d stderr=%q", code, stderr.String())
 	}
 	if !strings.Contains(stdout.String(), "marked reviewed") || !strings.Contains(stdout.String(), "does not change its operational condition") {
@@ -282,9 +291,105 @@ func TestInteractiveDiagnosticCommandsUseOpenStore(t *testing.T) {
 		t.Fatalf("interactive list exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
 	stdout.Reset()
-	code = runInteractiveScanner(bufio.NewScanner(strings.NewReader("/diagnostics review "+items[0].ProblemID+" reviewed\n/quit\n")), &stdout, &stderr, store, dataDir, settings, false)
+	code = runInteractiveScanner(bufio.NewScanner(strings.NewReader("/diagnostics review "+items[0].ProblemID+" reviewed --expected-revision "+items[0].Review.EvidenceRevision+"\n/quit\n")), &stdout, &stderr, store, dataDir, settings, false)
 	if code != 0 || !strings.Contains(stdout.String(), "marked reviewed") {
 		t.Fatalf("interactive review exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+}
+
+func TestDiagnosticReviewRejectsEvidenceChangedSinceInspection(t *testing.T) {
+	dataDir := t.TempDir()
+	items := seedDetailedDiagnostics(t, dataDir)
+	item := items[0]
+	root := filepath.Join(dataDir, "private-source-directory-marker")
+	path := filepath.Join(root, "private-source-one.jsonl")
+	valid := `{"type":"assistant","uuid":"fixture-a","sessionId":"session-a","cwd":"/synthetic/project","timestamp":"2026-10-11T12:00:00Z","message":{"role":"assistant","model":"claude-sonnet-5","usage":{"input_tokens":10,"output_tokens":5}}}`
+	if err := os.WriteFile(path, []byte(valid+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := tokenlogger.Open(filepath.Join(dataDir, "token-logger.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	collector, err := tokenlogger.NewCollector(store, []string{root}, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := collector.PollOnce(); err != nil {
+		t.Fatal(err)
+	}
+	current, err := store.InspectDiagnosticDetail(item.ProblemID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Review.EvidenceRevision == item.Review.EvidenceRevision {
+		t.Fatalf("fixture did not advance material evidence revision: old=%q current=%q", item.Review.EvidenceRevision, current.Review.EvidenceRevision)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"diagnostics", "review", item.ProblemID, "--state", "reviewed", "--expected-revision", item.Review.EvidenceRevision, "--data-dir", dataDir}, &stdout, &stderr)
+	if code != 2 || !strings.Contains(stderr.String(), "evidence changed during review") {
+		t.Fatalf("stale inspected revision exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	store, err = tokenlogger.Open(filepath.Join(dataDir, "token-logger.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	current, err = store.InspectDiagnosticDetail(item.ProblemID)
+	if err != nil || current.Review.State != tokenlogger.DiagnosticReviewPending {
+		t.Fatalf("stale revision changed review state: review=%s err=%v", current.Review.State, err)
+	}
+}
+
+func TestDiagnosticReviewAllowsCountOnlyRecurrenceAtInspectedRevision(t *testing.T) {
+	dataDir := t.TempDir()
+	items := seedDetailedDiagnostics(t, dataDir)
+	item := items[0]
+	root := filepath.Join(dataDir, "private-source-directory-marker")
+	store, err := tokenlogger.Open(filepath.Join(dataDir, "token-logger.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	collector, err := tokenlogger.NewCollector(store, []string{root}, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := collector.PollOnce(); err != nil {
+		t.Fatal(err)
+	}
+	current, err := store.InspectDiagnosticDetail(item.ProblemID)
+	if err != nil || current.Review.EvidenceRevision != item.Review.EvidenceRevision {
+		t.Fatalf("count-only recurrence changed material revision: old=%q current=%q err=%v", item.Review.EvidenceRevision, current.Review.EvidenceRevision, err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"diagnostics", "review", item.ProblemID, "--state", "reviewed", "--expected-revision", item.Review.EvidenceRevision, "--data-dir", dataDir}, &stdout, &stderr)
+	if code != 0 || !strings.Contains(stdout.String(), "marked reviewed") {
+		t.Fatalf("count-only recurrence review exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+}
+
+func TestInteractiveDiagnosticCommandsRejectDataDirOverride(t *testing.T) {
+	dataDir := t.TempDir()
+	items := seedDetailedDiagnostics(t, dataDir)
+	store, err := tokenlogger.Open(filepath.Join(dataDir, "token-logger.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	var stdout, stderr bytes.Buffer
+	code := runDiagnosticDetailsForStore([]string{"review", items[0].ProblemID, "--state", "reviewed", "--expected-revision", items[0].Review.EvidenceRevision, "--data-dir", filepath.Join(dataDir, "other")}, &stdout, &stderr, discardApplicationLog{}, store)
+	if code != 1 || !strings.Contains(stderr.String(), "cannot be used from the REPL") {
+		t.Fatalf("data-dir override exit=%d stderr=%q", code, stderr.String())
+	}
+	detail, err := store.InspectDiagnosticDetail(items[0].ProblemID)
+	if err != nil || detail.Review.State != tokenlogger.DiagnosticReviewPending {
+		t.Fatalf("rejected override changed review state: review=%s err=%v", detail.Review.State, err)
 	}
 }
 

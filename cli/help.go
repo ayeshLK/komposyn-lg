@@ -319,10 +319,12 @@ before sharing. Exit status: 0 inspected or unavailable, 1 invalid arguments,
 	"diagnostics": `Usage:
   komposyn-lg diagnostics list [filters] [--page-size <1-100>] [--continuation <token>] [--data-dir <path>] [--format text|json]
   komposyn-lg diagnostics show <problem-id> [--data-dir <path>] [--format text|json]
-  komposyn-lg diagnostics review <problem-id> --state reviewed|skipped [--data-dir <path>]
+  komposyn-lg diagnostics review <problem-id> --state reviewed|skipped --expected-revision <revision> [--data-dir <path>]
 
 Lists bounded persisted diagnostic evidence, inspects one detailed problem ID,
-or marks that exact detail reviewed/skipped. Review state is separate from its
+or marks the exact inspected evidence revision reviewed/skipped. Supply the
+evidence_revision shown by list or show; a changed revision is rejected and
+must be inspected again. Review state is separate from its
 active/resolved/unknown condition. List JSON is the versioned core page; use
 its next_token as --continuation to fetch the next page. Legacy fingerprints
 are not detailed problem IDs. Store.Open may migrate the database and
@@ -347,11 +349,12 @@ Shows the bounded core inspection projection for a detailed problem ID. A
 legacy diagnostic fingerprint is not a source identity and cannot be used here.
 `,
 	"diagnostics review": `Usage:
-  komposyn-lg diagnostics review <problem-id> --state reviewed|skipped [--data-dir <path>]
+  komposyn-lg diagnostics review <problem-id> --state reviewed|skipped --expected-revision <revision> [--data-dir <path>]
 
-Uses core compare-and-set review against the inspected evidence revision. A
-conflict means evidence changed; inspect again before retrying. Review does not
-resolve a condition, grant export consent, or transmit data.
+Uses core compare-and-set review against the evidence_revision returned by
+list or show. The revision is required and a conflict means evidence changed;
+inspect the current detail again before retrying. Review does not resolve a
+condition, grant export consent, or transmit data.
 `,
 	"logs show": `Usage:
   komposyn-lg logs show [--since <RFC3339>] [--level <debug|info|warn|error>]
@@ -555,7 +558,7 @@ _komposyn_lg() {
       projects:inspect) options="--help -h --data-dir --format --from --to --limit --offset" ;;
       diagnostics:list) options="--help -h --data-dir --format --review-state --condition --category --reason --subject-reference --page-size --continuation" ;;
       diagnostics:show) options="--help -h --data-dir --format" ;;
-      diagnostics:review) options="--help -h --data-dir --state" ;;
+      diagnostics:review) options="--help -h --data-dir --state --expected-revision" ;;
       sessions:list) options="--help -h --data-dir --format --from --to --project --client --provider --model" ;;
       sessions:show) options="--help -h --data-dir --format --from --to --project --client --provider --model --group-by" ;;
       watch:add) options="--help -h --data-dir --defaults" ;;
@@ -663,7 +666,7 @@ _komposyn-lg() {
       projects:inspect) compadd -- --help -h --data-dir --format --from --to --limit --offset ;;
       diagnostics:list) compadd -- --help -h --data-dir --format --review-state --condition --category --reason --subject-reference --page-size --continuation ;;
       diagnostics:show) compadd -- --help -h --data-dir --format ;;
-      diagnostics:review) compadd -- --help -h --data-dir --state ;;
+      diagnostics:review) compadd -- --help -h --data-dir --state --expected-revision ;;
       sessions:list) compadd -- --help -h --data-dir --format --from --to --project --client --provider --model ;;
       sessions:show) compadd -- --help -h --data-dir --format --from --to --project --client --provider --model --group-by ;;
       watch:add) compadd -- --help -h --data-dir --defaults ;;

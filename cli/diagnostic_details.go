@@ -48,6 +48,10 @@ func runDiagnosticDetailsForStore(args []string, stdout, stderr io.Writer, logge
 		fmt.Fprintf(stderr, "diagnostics: %s\n", err)
 		return 1
 	}
+	if existing != nil && options.dataDir != "" {
+		fmt.Fprintln(stderr, "diagnostics: --data-dir cannot be used from the REPL; commands use the open data directory")
+		return 1
+	}
 	store := existing
 	closeStore := func() {}
 	if store == nil {
@@ -109,35 +113,27 @@ func runDiagnosticDetailsForStore(args []string, stdout, stderr io.Writer, logge
 		}
 		return 0
 	case "review":
-		detail, err := store.InspectDiagnosticDetail(options.problemID)
-		if err != nil {
-			logDiagnosticQueryFailure(logger, existing != nil)
-			return writeDiagnosticCoreError(stderr, "inspect diagnostic before review", err)
-		}
-		if detail.ContractVersion != tokenlogger.DiagnosticContractVersion {
-			fmt.Fprintln(stderr, "inspect diagnostic before review: unsupported diagnostic contract version")
-			return 2
-		}
-		err = store.ReviewDiagnosticDetail(tokenlogger.DiagnosticReviewRequest{
-			ProblemID: detail.ProblemID, ExpectedEvidenceRevision: detail.Review.EvidenceRevision,
+		err := store.ReviewDiagnosticDetail(tokenlogger.DiagnosticReviewRequest{
+			ProblemID: options.problemID, ExpectedEvidenceRevision: options.expectedRevision,
 			State: options.reviewState,
 		})
 		if err != nil {
 			logDiagnosticQueryFailure(logger, existing != nil)
 			return writeDiagnosticCoreError(stderr, "review diagnostic", err)
 		}
-		fmt.Fprintf(stdout, "diagnostic %s marked %s; this records review only and does not change its operational condition.\n", boundedTerminalText(string(detail.ProblemID), 96), options.reviewState)
+		fmt.Fprintf(stdout, "diagnostic %s marked %s at evidence revision %s; this records review only and does not change its operational condition.\n", boundedTerminalText(options.problemID, 96), options.reviewState, boundedTerminalText(options.expectedRevision, 96))
 		return 0
 	}
 	return 1
 }
 
 type diagnosticDetailOptions struct {
-	dataDir     string
-	format      string
-	problemID   string
-	reviewState tokenlogger.DiagnosticReviewState
-	query       tokenlogger.DiagnosticQuery
+	dataDir          string
+	format           string
+	problemID        string
+	expectedRevision string
+	reviewState      tokenlogger.DiagnosticReviewState
+	query            tokenlogger.DiagnosticQuery
 }
 
 func supportedDiagnosticPage(page tokenlogger.DiagnosticPage) bool {
@@ -228,12 +224,20 @@ func parseDiagnosticDetailArgs(action string, args []string) (diagnosticDetailOp
 				return options, errors.New("--state is available only for diagnostics review")
 			}
 			options.reviewState = tokenlogger.DiagnosticReviewState(value)
+		case "--expected-revision":
+			if action != "review" {
+				return options, errors.New("--expected-revision is available only for diagnostics review")
+			}
+			options.expectedRevision = value
 		default:
 			return options, fmt.Errorf("unknown option %q", boundedTerminalText(arg, 48))
 		}
 	}
 	if action == "review" && options.reviewState != tokenlogger.DiagnosticReviewReviewed && options.reviewState != tokenlogger.DiagnosticReviewSkipped {
 		return options, errors.New("review state must be reviewed or skipped")
+	}
+	if action == "review" && options.expectedRevision == "" {
+		return options, errors.New("diagnostics review requires --expected-revision from the detail you inspected")
 	}
 	return options, nil
 }
@@ -281,10 +285,11 @@ func writeDiagnosticPageText(output io.Writer, page tokenlogger.DiagnosticPage) 
 }
 
 func writeDiagnosticListItem(output io.Writer, item tokenlogger.DiagnosticDetail) error {
-	_, err := fmt.Fprintf(output, "%s  %s/%s  condition=%s review=%s lifetime=%s (%s)\n",
+	_, err := fmt.Fprintf(output, "%s  %s/%s  condition=%s review=%s evidence_revision=%s lifetime=%s (%s)\n",
 		boundedTerminalText(string(item.ProblemID), 96), boundedTerminalText(string(item.Classification.Category), 48),
 		boundedTerminalText(string(item.Classification.Reason), 64), boundedTerminalText(string(item.Condition.State), 32),
-		boundedTerminalText(string(item.Review.State), 16), boundedTerminalText(item.Lifetime.Value, 32), diagnosticAvailabilityText(item.Lifetime.Availability))
+		boundedTerminalText(string(item.Review.State), 16), boundedTerminalText(item.Review.EvidenceRevision, 96),
+		boundedTerminalText(item.Lifetime.Value, 32), diagnosticAvailabilityText(item.Lifetime.Availability))
 	return err
 }
 
