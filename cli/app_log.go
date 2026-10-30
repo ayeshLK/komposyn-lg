@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -67,6 +68,8 @@ const (
 	appLogCollectorSummary
 	appLogSettingsUpdated
 	appLogSettingsLoadFailed
+	appLogCoreDiagnostic
+	appLogCoreDiagnosticLoss
 )
 
 func (event appLogEvent) String() string {
@@ -99,6 +102,10 @@ func (event appLogEvent) String() string {
 		return "settings.updated"
 	case appLogSettingsLoadFailed:
 		return "settings.load_failed"
+	case appLogCoreDiagnostic:
+		return "core.diagnostic"
+	case appLogCoreDiagnosticLoss:
+		return "core.diagnostic_loss"
 	default:
 		return ""
 	}
@@ -134,6 +141,11 @@ const (
 	appLogCodeImportDiscovery
 	appLogCodeImportSource
 	appLogCodeProtocolRecord
+	appLogCodeCoreOperationFailed
+	appLogCodeCoreConditionSummary
+	appLogCodeCorePollSummary
+	appLogCodeCoreOperationRecovered
+	appLogCodeCoreObserverLoss
 )
 
 func (code appLogCode) String() string {
@@ -190,6 +202,16 @@ func (code appLogCode) String() string {
 		return "import_source"
 	case appLogCodeProtocolRecord:
 		return "protocol_record"
+	case appLogCodeCoreOperationFailed:
+		return "core_operation_failed"
+	case appLogCodeCoreConditionSummary:
+		return "core_condition_summary"
+	case appLogCodeCorePollSummary:
+		return "core_poll_summary"
+	case appLogCodeCoreOperationRecovered:
+		return "core_operation_recovered"
+	case appLogCodeCoreObserverLoss:
+		return "core_observer_loss"
 	default:
 		return ""
 	}
@@ -284,6 +306,8 @@ func (command appCommand) String() string {
 type applicationLog interface {
 	Event(appLogEvent, appLogCode, appCommand, int)
 	CollectorSummary(appCommand, appLogCode, int64, appLogOutcomeCounts, appLogOutcomeCounts)
+	CoreObserver(appCommand) *tokenlogger.DiagnosticObserver
+	CoreFailure(error, appLogEvent, appLogCode, appCommand, int)
 	Unavailable() bool
 	Close()
 }
@@ -293,16 +317,35 @@ type discardApplicationLog struct{}
 func (discardApplicationLog) Event(appLogEvent, appLogCode, appCommand, int) {}
 func (discardApplicationLog) CollectorSummary(appCommand, appLogCode, int64, appLogOutcomeCounts, appLogOutcomeCounts) {
 }
-func (discardApplicationLog) Close()            {}
-func (discardApplicationLog) Unavailable() bool { return false }
+func (discardApplicationLog) CoreObserver(appCommand) *tokenlogger.DiagnosticObserver     { return nil }
+func (discardApplicationLog) CoreFailure(error, appLogEvent, appLogCode, appCommand, int) {}
+func (discardApplicationLog) Close()                                                      {}
+func (discardApplicationLog) Unavailable() bool                                           { return false }
 
 type unavailableApplicationLog struct{}
 
 func (unavailableApplicationLog) Event(appLogEvent, appLogCode, appCommand, int) {}
 func (unavailableApplicationLog) CollectorSummary(appCommand, appLogCode, int64, appLogOutcomeCounts, appLogOutcomeCounts) {
 }
-func (unavailableApplicationLog) Close()            {}
-func (unavailableApplicationLog) Unavailable() bool { return true }
+func (unavailableApplicationLog) CoreObserver(appCommand) *tokenlogger.DiagnosticObserver     { return nil }
+func (unavailableApplicationLog) CoreFailure(error, appLogEvent, appLogCode, appCommand, int) {}
+func (unavailableApplicationLog) Close()                                                      {}
+func (unavailableApplicationLog) Unavailable() bool                                           { return true }
+
+// coreFailureEnqueued reports only the core mailbox disposition. It must not
+// be interpreted as evidence that a CLI log write reached disk.
+type coreFailureFallback struct {
+	event   appLogEvent
+	code    appLogCode
+	command appCommand
+	exit    int
+	ready   bool
+}
+
+func coreFailureEnqueued(err error) bool {
+	failure, ok := tokenlogger.FailureDetails(err)
+	return ok && failure.EmissionDisposition == tokenlogger.DiagnosticEmissionQueued
+}
 
 type logKey struct {
 	event   appLogEvent
@@ -320,25 +363,41 @@ type appLogOutcomeCounts struct {
 var overflowLogKey = logKey{event: appLogEventsSuppressed, command: appCommandOther}
 
 type eventLogger struct {
-	sink              *jsonlLogSink
-	cliVersion        string
-	coreVersion       string
-	metadataTruncated bool
-	pid               int
-	runID             string
-	queue             chan []byte
-	stop              chan struct{}
-	done              chan struct{}
-	mu                sync.Mutex
-	encodeMu          sync.Mutex
-	encodeBuffer      bytes.Buffer
-	encoder           *slog.Logger
-	closed            bool
-	closeBy           time.Time
-	last              map[logKey]time.Time
-	suppressed        map[logKey]uint64
-	dropped           atomic.Uint64
-	sinkFailed        atomic.Bool
+	sink                   *jsonlLogSink
+	cliVersion             string
+	coreVersion            string
+	metadataTruncated      bool
+	pid                    int
+	runID                  string
+	queue                  chan []byte
+	stop                   chan struct{}
+	done                   chan struct{}
+	mu                     sync.Mutex
+	encodeMu               sync.Mutex
+	encodeBuffer           bytes.Buffer
+	encoder                *slog.Logger
+	closed                 bool
+	closeBy                time.Time
+	last                   map[logKey]time.Time
+	suppressed             map[logKey]uint64
+	dropped                atomic.Uint64
+	sinkFailed             atomic.Bool
+	coreObserver           *tokenlogger.DiagnosticObserver
+	coreObserverStop       chan struct{}
+	coreObserverDone       chan struct{}
+	coreCommand            appCommand
+	coreObserved           atomic.Uint64
+	coreConsumed           atomic.Uint64
+	coreInvalid            atomic.Uint64
+	coreLostReported       atomic.Uint64
+	coreSeen               map[string]struct{}
+	coreSeenOrder          []string
+	coreSeenOperations     map[string]struct{}
+	coreSeenOperationOrder []string
+	coreFallbacks          map[string]coreFailureFallback
+	coreOperationLines     map[string][32]byte
+	coreQueuedLines        map[[32]byte]string
+	closeOnce              sync.Once
 }
 
 func newEventLogger(dir, cli, core string, pid int, runID string) (*eventLogger, error) {
@@ -360,13 +419,23 @@ func newEventLogger(dir, cli, core string, pid int, runID string) (*eventLogger,
 	last[overflowLogKey] = time.Time{}
 	cliValue, cliTruncated := boundedVersion(cli)
 	coreValue, coreTruncated := boundedVersion(core)
+	observer, err := tokenlogger.NewDiagnosticObserver(0)
+	if err != nil {
+		return nil, errors.New("initialize core diagnostic observer")
+	}
 	logger := &eventLogger{
 		sink: sink, cliVersion: cliValue, coreVersion: coreValue, metadataTruncated: cliTruncated || coreTruncated, pid: pid, runID: runID,
 		queue: make(chan []byte, logQueueCapacity), stop: make(chan struct{}), done: make(chan struct{}),
+		coreObserver: observer, coreObserverStop: make(chan struct{}), coreObserverDone: make(chan struct{}),
+		coreSeen: make(map[string]struct{}, maxLogKeyState), coreSeenOrder: make([]string, 0, maxLogKeyState),
+		coreSeenOperations: make(map[string]struct{}, maxLogKeyState), coreSeenOperationOrder: make([]string, 0, maxLogKeyState),
+		coreFallbacks:      make(map[string]coreFailureFallback, maxLogKeyState),
+		coreOperationLines: make(map[string][32]byte, maxLogKeyState), coreQueuedLines: make(map[[32]byte]string, logQueueCapacity),
 		last: last, suppressed: make(map[logKey]uint64, maxLogKeyState),
 	}
 	logger.encoder = newLogEncoder(&logger.encodeBuffer)
 	go logger.run()
+	go logger.drainCoreObserver()
 	return logger, nil
 }
 
@@ -447,6 +516,249 @@ func (logger *eventLogger) Event(event appLogEvent, code appLogCode, command app
 	}
 }
 
+func (logger *eventLogger) CoreObserver(command appCommand) *tokenlogger.DiagnosticObserver {
+	if logger == nil || command.String() == "" {
+		return nil
+	}
+	logger.mu.Lock()
+	if !logger.closed {
+		logger.coreCommand = command
+	}
+	observer := logger.coreObserver
+	if logger.closed {
+		observer = nil
+	}
+	logger.mu.Unlock()
+	return observer
+}
+
+func (logger *eventLogger) CoreFailure(err error, event appLogEvent, code appLogCode, command appCommand, exit int) {
+	if logger == nil || event.String() == "" || command.String() == "" {
+		return
+	}
+	failure, classified := tokenlogger.FailureDetails(err)
+	if !classified || failure.EmissionDisposition != tokenlogger.DiagnosticEmissionQueued || failure.OperationID == "" {
+		logger.Event(event, code, command, exit)
+		return
+	}
+	opID := string(failure.OperationID)
+	logger.mu.Lock()
+	if logger.closed {
+		logger.mu.Unlock()
+		logger.Event(event, code, command, exit)
+		return
+	}
+	if _, seen := logger.coreSeenOperations[opID]; seen {
+		logger.mu.Unlock()
+		return
+	}
+	if len(logger.coreFallbacks) >= maxLogKeyState {
+		logger.mu.Unlock()
+		logger.Event(event, code, command, exit)
+		return
+	}
+	fallback := coreFailureFallback{event: event, code: code, command: command, exit: exit}
+	if _, queued := logger.coreOperationLines[opID]; !queued {
+		// The event may be in the caller-owned mailbox but not yet drained.
+		// Keep this fallback pending until the matching event arrives or
+		// shutdown establishes that the mailbox has been drained.
+	}
+	logger.coreFallbacks[opID] = fallback
+	logger.mu.Unlock()
+}
+
+func (logger *eventLogger) resolveCoreFallbackLocked(operationID string) {
+	delete(logger.coreFallbacks, operationID)
+}
+
+func (logger *eventLogger) markCoreFallbackReady(operationID string) {
+	if logger == nil || operationID == "" {
+		return
+	}
+	logger.mu.Lock()
+	if fallback, ok := logger.coreFallbacks[operationID]; ok {
+		fallback.ready = true
+		logger.coreFallbacks[operationID] = fallback
+	}
+	logger.mu.Unlock()
+}
+
+func (logger *eventLogger) flushCoreFallbacks() {
+	if logger == nil {
+		return
+	}
+	logger.mu.Lock()
+	defer logger.mu.Unlock()
+	for operationID, fallback := range logger.coreFallbacks {
+		if !fallback.ready {
+			continue
+		}
+		line := logger.encode(fallback.event, fallback.code, fallback.command, fallback.exit, 0)
+		if len(line) == 0 || len(line) > maxLogEventBytes || line[len(line)-1] != '\n' {
+			logger.dropped.Add(1)
+			delete(logger.coreFallbacks, operationID)
+			continue
+		}
+		select {
+		case logger.queue <- line:
+			delete(logger.coreFallbacks, operationID)
+		default:
+			logger.dropped.Add(1)
+			return
+		}
+	}
+}
+
+func (logger *eventLogger) rememberCoreOperationLocked(operationID string) {
+	if operationID == "" {
+		return
+	}
+	if _, exists := logger.coreSeenOperations[operationID]; exists {
+		return
+	}
+	if len(logger.coreSeenOperationOrder) == maxLogKeyState {
+		delete(logger.coreSeenOperations, logger.coreSeenOperationOrder[0])
+		copy(logger.coreSeenOperationOrder, logger.coreSeenOperationOrder[1:])
+		logger.coreSeenOperationOrder = logger.coreSeenOperationOrder[:len(logger.coreSeenOperationOrder)-1]
+	}
+	logger.coreSeenOperations[operationID] = struct{}{}
+	logger.coreSeenOperationOrder = append(logger.coreSeenOperationOrder, operationID)
+}
+
+func (logger *eventLogger) finishCoreWrite(line []byte, operationID string, written bool) {
+	if logger == nil || operationID == "" {
+		return
+	}
+	logger.mu.Lock()
+	defer logger.mu.Unlock()
+	hash := sha256.Sum256(line)
+	delete(logger.coreQueuedLines, hash)
+	delete(logger.coreOperationLines, operationID)
+	if written {
+		logger.rememberCoreOperationLocked(operationID)
+		logger.resolveCoreFallbackLocked(operationID)
+		return
+	}
+	if fallback, ok := logger.coreFallbacks[operationID]; ok {
+		fallback.ready = true
+		logger.coreFallbacks[operationID] = fallback
+	}
+}
+
+func (logger *eventLogger) coreOperationForLine(line []byte) string {
+	if logger == nil {
+		return ""
+	}
+	hash := sha256.Sum256(line)
+	logger.mu.Lock()
+	defer logger.mu.Unlock()
+	return logger.coreQueuedLines[hash]
+}
+
+func (logger *eventLogger) finishCoreWriteUncertain(line []byte, operationID string) {
+	if logger == nil || operationID == "" {
+		return
+	}
+	logger.mu.Lock()
+	defer logger.mu.Unlock()
+	hash := sha256.Sum256(line)
+	delete(logger.coreQueuedLines, hash)
+	delete(logger.coreOperationLines, operationID)
+	// A partial/uncertain append may already contain the full core event. Do not
+	// replay it as a generic failure; existing dropped-event accounting records
+	// that the sink outcome was uncertain.
+	delete(logger.coreFallbacks, operationID)
+}
+
+func (logger *eventLogger) prepareCoreFallbacks() {
+	logger.mu.Lock()
+	for operationID, fallback := range logger.coreFallbacks {
+		if _, queued := logger.coreOperationLines[operationID]; !queued {
+			fallback.ready = true
+			logger.coreFallbacks[operationID] = fallback
+		}
+	}
+	logger.mu.Unlock()
+}
+
+func (logger *eventLogger) CoreDiagnostic(event tokenlogger.DiagnosticEvent) {
+	if logger == nil {
+		return
+	}
+	logger.coreConsumed.Add(1)
+	projection, ok := projectCoreDiagnostic(event)
+	if !ok || event.CoreVersion != logger.coreVersion && strings.TrimPrefix(event.CoreVersion, "v") != strings.TrimPrefix(logger.coreVersion, "v") {
+		logger.coreInvalid.Add(1)
+		logger.markCoreFallbackReady(string(event.OperationID))
+		return
+	}
+	code := coreDiagnosticCode(event.Kind)
+	if code == appLogCodeNone {
+		logger.coreInvalid.Add(1)
+		logger.markCoreFallbackReady(string(event.OperationID))
+		return
+	}
+	logger.mu.Lock()
+	defer logger.mu.Unlock()
+	if logger.closed {
+		return
+	}
+	command := logger.coreCommand
+	if command.String() == "" {
+		command = appCommandOther
+	}
+	key := logKey{event: appLogCoreDiagnostic, code: code, command: command}
+	if logger.coreSeen == nil {
+		logger.coreSeen = make(map[string]struct{}, maxLogKeyState)
+	}
+	dedupKey := string(event.Kind) + ":" + string(event.OperationID) + ":" + string(event.Classification.Component) + ":" + string(event.Classification.Operation) + ":" + string(event.Classification.Reason) + ":" + event.Subject.Reference
+	if _, duplicate := logger.coreSeen[dedupKey]; duplicate {
+		logger.suppressed[key]++
+		return
+	}
+	if len(logger.coreSeenOrder) == maxLogKeyState {
+		delete(logger.coreSeen, logger.coreSeenOrder[0])
+		copy(logger.coreSeenOrder, logger.coreSeenOrder[1:])
+		logger.coreSeenOrder = logger.coreSeenOrder[:len(logger.coreSeenOrder)-1]
+	}
+	logger.coreSeen[dedupKey] = struct{}{}
+	logger.coreSeenOrder = append(logger.coreSeenOrder, dedupKey)
+	if _, exists := logger.last[key]; !exists && len(logger.last) >= maxLogKeyState-1 {
+		key = overflowLogKey
+	}
+	now := time.Now().UTC()
+	if last, exists := logger.last[key]; exists && !last.IsZero() && now.Sub(last) < logRepeatWindow {
+		logger.suppressed[key]++
+		return
+	}
+	logger.last[key] = now
+	line := logger.encodeCoreDiagnostic(projection, event, code, command)
+	if len(line) == 0 || len(line) > maxLogEventBytes || line[len(line)-1] != '\n' {
+		logger.dropped.Add(1)
+		if fallback, ok := logger.coreFallbacks[string(event.OperationID)]; ok {
+			fallback.ready = true
+			logger.coreFallbacks[string(event.OperationID)] = fallback
+		}
+		return
+	}
+	select {
+	case logger.queue <- line:
+		logger.coreObserved.Add(1)
+		if event.Kind == tokenlogger.DiagnosticEventOperationFailed {
+			opID := string(event.OperationID)
+			hash := sha256.Sum256(line)
+			logger.coreOperationLines[opID] = hash
+			logger.coreQueuedLines[hash] = opID
+		}
+	default:
+		logger.dropped.Add(1)
+		if fallback, ok := logger.coreFallbacks[string(event.OperationID)]; ok {
+			fallback.ready = true
+			logger.coreFallbacks[string(event.OperationID)] = fallback
+		}
+	}
+}
+
 const maxLoggedOutcomeCount int64 = 1<<53 - 1
 const maxLoggedDurationMillis int64 = 24 * 60 * 60 * 1000
 const appLogOperationExitCodeUnset = -1
@@ -511,7 +823,7 @@ func (logger *eventLogger) encode(event appLogEvent, code appLogCode, command ap
 	defer logger.encodeMu.Unlock()
 	logger.encodeBuffer.Reset()
 	level := slog.LevelInfo
-	if event == appLogCollectorFailed || event == appLogSinkUnavailable || event == appLogCommandFailed || event == appLogSettingsLoadFailed || event == appLogProcessFinished && exitCode != 0 || event == appLogCollectorHealthChanged && code != appLogCodeCollectorHealthRunning || event == appLogCollectorSummary && code != appLogCodeCollectorHealthRunning {
+	if event == appLogCollectorFailed || event == appLogSinkUnavailable || event == appLogCommandFailed || event == appLogSettingsLoadFailed || event == appLogCoreDiagnosticLoss || event == appLogProcessFinished && exitCode != 0 || event == appLogCollectorHealthChanged && code != appLogCodeCollectorHealthRunning || event == appLogCollectorSummary && code != appLogCodeCollectorHealthRunning {
 		level = slog.LevelWarn
 	}
 	attrs := []slog.Attr{
@@ -529,7 +841,7 @@ func (logger *eventLogger) encode(event appLogEvent, code appLogCode, command ap
 	if event == appLogProcessFinished || event == appLogCommandFailed && exitCode >= 0 {
 		attrs = append(attrs, slog.Int("exit_code", exitCode))
 	}
-	if event == appLogEventsSuppressed || event == appLogEventsDropped {
+	if event == appLogEventsSuppressed || event == appLogEventsDropped || event == appLogCoreDiagnosticLoss {
 		attrs = append(attrs, slog.Uint64("count", count))
 	}
 	logger.encoder.LogAttrs(context.Background(), level, event.String(), attrs...)
@@ -581,6 +893,77 @@ func (logger *eventLogger) encodeCollectorSummary(command appCommand, status app
 	return append([]byte(nil), logger.encodeBuffer.Bytes()...)
 }
 
+func (logger *eventLogger) encodeCoreDiagnostic(projection coreDiagnosticProjection, event tokenlogger.DiagnosticEvent, code appLogCode, command appCommand) []byte {
+	logger.encodeMu.Lock()
+	defer logger.encodeMu.Unlock()
+	logger.encodeBuffer.Reset()
+	attrs := []slog.Attr{
+		slog.Int("format_version", logFormatVersion),
+		slog.String("cli_version", logger.cliVersion),
+		slog.String("core_version", logger.coreVersion),
+		slog.Int("pid", logger.pid),
+		slog.String("run_id", logger.runID),
+		slog.String("command", command.String()),
+		slog.String("code", code.String()),
+		slog.Bool("metadata_truncated", logger.metadataTruncated),
+		slog.String("core_contract_version", strconv.Itoa(projection.contractVersion)),
+		slog.String("core_kind", string(projection.kind)),
+		slog.String("core_evidence_scope", string(projection.evidenceScope)),
+		slog.String("core_evidence_availability", string(projection.evidenceAvail)),
+		slog.String("core_evidence_truncated", strconv.FormatBool(projection.evidenceLost)),
+	}
+	if projection.evidenceReason != "" {
+		attrs = append(attrs, slog.String("core_evidence_unavailable_reason", string(projection.evidenceReason)))
+	}
+	classification := projection.classification
+	if event.HasClassification {
+		attrs = append(attrs,
+			slog.String("core_component", string(classification.Component)),
+			slog.String("core_operation", string(classification.Operation)),
+			slog.String("core_reason", string(classification.Reason)),
+			slog.String("core_severity", string(classification.Severity)),
+			slog.String("core_category", string(classification.Category)),
+			slog.String("core_adapter", string(classification.Adapter)),
+			slog.String("core_retryability", string(classification.Retryability)),
+			slog.String("core_impact", string(classification.Impact)),
+			slog.String("core_explanation_code", string(classification.ExplanationCode)),
+			slog.String("core_remediation_code", string(classification.RemediationCode)),
+		)
+	}
+	attrs = append(attrs,
+		slog.String("core_counts_scope", string(projection.countsScope)),
+		slog.String("core_counts_availability", string(projection.countsAvail)),
+		slog.String("core_counts_saturated", strconv.FormatBool(projection.countsSaturated)),
+		slog.String("core_counts_truncated", strconv.FormatBool(projection.countsTruncated)),
+	)
+	if projection.countsAvail == tokenlogger.DiagnosticAvailabilityAvailable {
+		counts := projection.counts
+		attrs = append(attrs,
+			slog.String("core_count_ignored_non_usage", strconv.FormatUint(counts.IgnoredNonUsage, 10)),
+			slog.String("core_count_unchanged_snapshot", strconv.FormatUint(counts.UnchangedSnapshot, 10)),
+			slog.String("core_count_deferred_incomplete_tail", strconv.FormatUint(counts.DeferredIncompleteTail, 10)),
+			slog.String("core_count_unsupported_usage", strconv.FormatUint(counts.UnsupportedUsage, 10)),
+			slog.String("core_count_malformed_record", strconv.FormatUint(counts.MalformedRecord, 10)),
+			slog.String("core_count_failed_source", strconv.FormatUint(counts.FailedSource, 10)),
+		)
+	}
+	level := slog.LevelInfo
+	if classification.Severity == tokenlogger.DiagnosticSeverityWarning {
+		level = slog.LevelWarn
+	} else if classification.Severity == tokenlogger.DiagnosticSeverityError {
+		level = slog.LevelError
+	}
+	logger.encoder.LogAttrs(context.Background(), level, appLogCoreDiagnostic.String(), attrs...)
+	if logger.encodeBuffer.Len() > maxLogEventBytes {
+		return nil
+	}
+	return append([]byte(nil), logger.encodeBuffer.Bytes()...)
+}
+
+func (logger *eventLogger) encodeCoreObserverLoss(count uint64) []byte {
+	return logger.encode(appLogCoreDiagnosticLoss, appLogCodeCoreObserverLoss, appCommandOther, 0, count)
+}
+
 func newLogEncoder(output io.Writer) *slog.Logger {
 	handler := slog.NewJSONHandler(output, &slog.HandlerOptions{
 		Level: slog.LevelDebug,
@@ -594,6 +977,55 @@ func newLogEncoder(output io.Writer) *slog.Logger {
 	return slog.New(handler)
 }
 
+func (logger *eventLogger) drainCoreObserver() {
+	defer close(logger.coreObserverDone)
+	events := logger.coreObserver.Events()
+	for {
+		select {
+		case event := <-events:
+			logger.CoreDiagnostic(event)
+		case <-logger.coreObserverStop:
+			for {
+				select {
+				case event := <-events:
+					logger.CoreDiagnostic(event)
+				default:
+					return
+				}
+			}
+		}
+	}
+}
+
+func (logger *eventLogger) reportCoreObserverLoss() {
+	if logger == nil || logger.coreObserver == nil {
+		return
+	}
+	stats := logger.coreObserver.Stats()
+	consumed := logger.coreConsumed.Load()
+	queuedLost := uint64(0)
+	if stats.Admitted > consumed {
+		queuedLost = stats.Admitted - consumed
+	}
+	lost := saturatingAdd(stats.Dropped, queuedLost)
+	lost = saturatingAdd(lost, logger.coreInvalid.Load())
+	if lost == 0 {
+		return
+	}
+	line := logger.encodeCoreObserverLoss(lost)
+	logger.mu.Lock()
+	defer logger.mu.Unlock()
+	if logger.closed {
+		return
+	}
+	select {
+	case logger.queue <- line:
+		logger.coreLostReported.Store(lost)
+	default:
+		logger.dropped.Add(1)
+	}
+}
+
 func (logger *eventLogger) run() {
 	defer close(logger.done)
 	ticker := time.NewTicker(time.Second)
@@ -604,6 +1036,7 @@ func (logger *eventLogger) run() {
 			logger.writeBatch(logger.takeBatch(first))
 		case <-ticker.C:
 			logger.flushSummaries()
+			logger.flushCoreFallbacks()
 		case <-logger.stop:
 			logger.mu.Lock()
 			deadline := logger.closeBy
@@ -611,12 +1044,29 @@ func (logger *eventLogger) run() {
 			for time.Now().Before(deadline) {
 				batch := logger.takeAvailableBatch()
 				if len(batch) == 0 {
+					logger.prepareCoreFallbacks()
+					logger.flushCoreFallbacks()
+					batch = logger.takeAvailableBatch()
+					if len(batch) > 0 {
+						logger.writeBatch(batch)
+						continue
+					}
 					logger.flushSummaries()
 					return
 				}
 				logger.writeBatch(batch)
 			}
 			logger.dropped.Add(uint64(len(logger.queue)))
+			logger.prepareCoreFallbacks()
+			logger.flushCoreFallbacks()
+			if batch := logger.takeAvailableBatch(); len(batch) > 0 {
+				logger.writeBatch(batch)
+				logger.prepareCoreFallbacks()
+				logger.flushCoreFallbacks()
+				if fallbackBatch := logger.takeAvailableBatch(); len(fallbackBatch) > 0 {
+					logger.writeBatch(fallbackBatch)
+				}
+			}
 			return
 		}
 	}
@@ -653,9 +1103,34 @@ func (logger *eventLogger) writeBatch(batch [][]byte) {
 	if len(batch) == 0 {
 		return
 	}
-	if err := logger.sink.appendBatch(batch); err != nil {
+	err := logger.sink.appendBatch(batch)
+	if err == nil {
+		for _, line := range batch {
+			if operationID := logger.coreOperationForLine(line); operationID != "" {
+				logger.finishCoreWrite(line, operationID, true)
+			}
+		}
+		return
+	}
+	if err != nil {
 		logger.sinkFailed.Store(true)
 		logger.dropped.Add(uint64(len(batch)))
+		progress := batchAppendProgress(err)
+		for i, line := range batch {
+			operationID := logger.coreOperationForLine(line)
+			if operationID == "" {
+				continue
+			}
+			switch {
+			case i < progress.completed:
+				logger.finishCoreWrite(line, operationID, true)
+			case i == progress.completed && progress.uncertain:
+				logger.finishCoreWriteUncertain(line, operationID)
+			default:
+				logger.finishCoreWrite(line, operationID, false)
+			}
+		}
+		logger.flushCoreFallbacks()
 	}
 }
 
@@ -722,21 +1197,44 @@ func (logger *eventLogger) Close() {
 	if logger == nil {
 		return
 	}
-	logger.mu.Lock()
-	if logger.closed {
+	logger.closeOnce.Do(func() {
+		deadline := time.Now().Add(logCloseBudget)
+		close(logger.coreObserverStop)
+		observerWait := time.Until(deadline)
+		if observerWait > coreObserverDrainBudget {
+			observerWait = coreObserverDrainBudget
+		}
+		if observerWait < 0 {
+			observerWait = 0
+		}
+		observerTimer := time.NewTimer(observerWait)
+		select {
+		case <-logger.coreObserverDone:
+		case <-observerTimer.C:
+		}
+		if !observerTimer.Stop() {
+			select {
+			case <-observerTimer.C:
+			default:
+			}
+		}
+		logger.reportCoreObserverLoss()
+		logger.mu.Lock()
+		logger.closed = true
+		logger.closeBy = deadline
+		close(logger.stop)
 		logger.mu.Unlock()
-		return
-	}
-	logger.closed = true
-	logger.closeBy = time.Now().Add(logCloseBudget)
-	close(logger.stop)
-	logger.mu.Unlock()
-	timer := time.NewTimer(logCloseBudget)
-	defer timer.Stop()
-	select {
-	case <-logger.done:
-	case <-timer.C:
-	}
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return
+		}
+		timer := time.NewTimer(remaining)
+		defer timer.Stop()
+		select {
+		case <-logger.done:
+		case <-timer.C:
+		}
+	})
 }
 
 type jsonlLogSink struct {

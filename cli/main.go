@@ -197,9 +197,13 @@ func openStoreWithLog(path string, logger applicationLog, command appCommand) (*
 	if logger == nil {
 		logger = discardApplicationLog{}
 	}
-	store, err := tokenlogger.Open(path)
+	observer := logger.CoreObserver(command)
+	store, err := tokenlogger.OpenWithObservation(path, tokenlogger.OpenOptions{}, observer)
 	if err != nil {
-		logger.Event(appLogCommandFailed, appLogCodeDatabaseOpen, command, 2)
+		// Keep a generic fallback keyed to core's operation ID until the
+		// matching safe event reaches the sink. Queue admission alone is not
+		// treated as durable evidence.
+		logger.CoreFailure(err, appLogCommandFailed, appLogCodeDatabaseOpen, command, 2)
 		return nil, err
 	}
 	return store, nil

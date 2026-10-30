@@ -814,7 +814,7 @@ func expectedCollectorPollCancellation(ctx context.Context, err error, cooperati
 func logPollFailureEpisode(logger applicationLog, command appCommand, ctx context.Context, pollErr, heartbeatErr error, cooperativeStop bool, active *bool) bool {
 	unexpected := pollErr != nil && heartbeatErr == nil && !expectedCollectorPollCancellation(ctx, pollErr, cooperativeStop)
 	if unexpected && !*active {
-		logger.Event(appLogCollectorFailed, appLogCodeCollectorPoll, command, 2)
+		logger.CoreFailure(pollErr, appLogCollectorFailed, appLogCodeCollectorPoll, command, 2)
 	}
 	*active = unexpected
 	return unexpected

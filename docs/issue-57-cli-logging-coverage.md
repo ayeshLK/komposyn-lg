@@ -105,20 +105,27 @@ representable JSON integer; known `poll_duration_ms` values are capped at 24 hou
 durations are omitted. No arbitrary strings, maps, paths, errors, or core event
 fields can enter through the application logger interface.
 
-Core #163 is still open and is not present in a published core tag. Increment
-B remains outstanding. When a reviewed core release is available, the adapter
-must preserve this catalogue, add only validated compatible fields (keeping
-version 1 for additive changes), document best-effort correlation/delivery,
-and prevent duplicate reporting of the same core operation.
+At the time of this baseline audit, core #163 remained open and its public API
+was not released. It is now complete and included in published core v0.10.0.
+The current CLI integration candidate adds the following bounded adapter:
 
-Increment B requires the public optional observer before `Store.Open` schema
-preflight and through the supported collector observer path, plus typed core
-errors where released APIs expose them. The CLI will add only its process/run
-and version context at the serialization boundary; it will validate the core
-event fields against an allowlist and correlate duplicate core/CLI reports.
-The observer remains best effort and independent of ingestion commits. No
-permanent module replacement may be used to bypass the required reviewed core
-release.
+| Event | Code values | Notes |
+| --- | --- | --- |
+| `core.diagnostic` | `core_operation_failed`, `core_condition_summary`, `core_poll_summary`, `core_operation_recovered` | Contract version, kind, fixed classification enums, evidence scope/availability/unavailable reason/truncation, and separate count scope/availability/saturation/truncation. |
+| `core.diagnostic_loss` | `core_observer_loss` | Count of observer-reported drops, invalid events, or accepted events not consumed by bounded shutdown. |
+
+Core counter values are decimal strings so the complete `uint64` range is
+preserved. They are labeled with core scope and do not replace CLI
+`latest_poll_*` or `run_cumulative_*` counts. The projection excludes operation,
+collector-run, poll, and subject IDs; offsets; exact core timestamps; paths;
+and error text. Reader allowlists reject unknown or malformed core fields.
+The observer is caller-drained, bounded, and never closed by core. The CLI
+drains the bounded backlog at shutdown for at most 100 ms and reports known
+loss. Admission to either observer or log queue is not proof of disk
+persistence. Core operation IDs are used only in a bounded in-memory duplicate
+cache and are not serialized. Pre-Open failures suppress the duplicate generic
+database-open event only when the typed core event was admitted; otherwise the
+baseline generic event remains.
 
 ## Production logger resource comparison
 
