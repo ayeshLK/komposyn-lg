@@ -82,7 +82,9 @@ nonnegative, bounded integer keys under both `latest_poll_` and
 `unchanged_snapshot`, `deferred_incomplete_tail`, `unsupported_usage`,
 `malformed_record`, and `failed_source`. Unknown duration is omitted. The
 largest counter is capped at 2^53−1 for exact JSON integer representation.
-No severity values are added; current records use only `INFO` and `WARN`.
+The baseline CLI events use only `INFO` and `WARN`. The core adapter also
+maps the validated classification severity to `INFO`, `WARN`, or `ERROR`;
+observer-loss summaries use `WARN`.
 The embedded REPL collector does not measure the callback's poll duration, so
 it omits `poll_duration_ms` rather than reporting a fabricated zero.
 
@@ -113,6 +115,10 @@ The current CLI integration candidate adds the following bounded adapter:
 | --- | --- | --- |
 | `core.diagnostic` | `core_operation_failed`, `core_condition_summary`, `core_poll_summary`, `core_operation_recovered` | Contract version, kind, fixed classification enums, evidence scope/availability/unavailable reason/truncation, and separate count scope/availability/saturation/truncation. |
 | `core.diagnostic_loss` | `core_observer_loss` | Count of observer-reported drops, invalid events, or accepted events not consumed by bounded shutdown. |
+
+Core diagnostic levels are restricted to `INFO`, `WARN`, and `ERROR` from the
+released severity enum; loss records are warnings. The adapter does not infer
+severity from arbitrary error text.
 
 Core counter values are decimal strings so the complete `uint64` range is
 preserved. They are labeled with core scope and do not replace CLI
