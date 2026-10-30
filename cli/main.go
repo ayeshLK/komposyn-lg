@@ -300,21 +300,21 @@ func startInteractiveCollectorWithLogger(store *tokenlogger.Store, roots []token
 	}
 	if _, err := store.AcquireCollectorLease(instance, os.Getpid(), cliVersion, "embedded", interval, staleWindow(interval)); err != nil {
 		if !errors.Is(err, tokenlogger.ErrCollectorActive) {
-			logger.Event(appLogCollectorFailed, appLogCodeCollectorAcquire, appCommandInteractive, 2)
+			logger.CoreFailure(err, appLogCollectorFailed, appLogCodeCollectorAcquire, appCommandInteractive, 2)
 		}
 		return nil, err
 	}
 	if err := store.MarkCollectorReady(instance); err != nil {
-		logger.Event(appLogCollectorFailed, appLogCodeCollectorReadiness, appCommandInteractive, 2)
+		logger.CoreFailure(err, appLogCollectorFailed, appLogCodeCollectorReadiness, appCommandInteractive, 2)
 		if releaseErr := store.ReleaseCollectorLease(instance, "failed", err.Error()); releaseErr != nil {
-			logger.Event(appLogCollectorFailed, appLogCodeCollectorRelease, appCommandInteractive, 2)
+			logger.CoreFailure(releaseErr, appLogCollectorFailed, appLogCodeCollectorRelease, appCommandInteractive, 2)
 		}
 		return nil, err
 	}
 	if err := store.BeginCollectorPoll(instance, len(roots)); err != nil {
 		logger.Event(appLogCollectorFailed, appLogCodeCollectorStore, appCommandInteractive, 2)
 		if releaseErr := store.ReleaseCollectorLease(instance, "failed", err.Error()); releaseErr != nil {
-			logger.Event(appLogCollectorFailed, appLogCodeCollectorRelease, appCommandInteractive, 2)
+			logger.CoreFailure(releaseErr, appLogCollectorFailed, appLogCodeCollectorRelease, appCommandInteractive, 2)
 		}
 		return nil, err
 	}
@@ -324,7 +324,7 @@ func startInteractiveCollectorWithLogger(store *tokenlogger.Store, roots []token
 		defer close(runtime.done)
 		defer func() {
 			if err := store.ReleaseCollectorLease(instance, "stopped", ""); err != nil {
-				logger.Event(appLogCollectorFailed, appLogCodeCollectorRelease, appCommandInteractive, 2)
+				logger.CoreFailure(err, appLogCollectorFailed, appLogCodeCollectorRelease, appCommandInteractive, 2)
 			}
 		}()
 		lastHealthStatus := ""
@@ -344,7 +344,7 @@ func startInteractiveCollectorWithLogger(store *tokenlogger.Store, roots []token
 					stop, heartbeatErr := store.HeartbeatCollector(instance)
 					if stop || heartbeatErr != nil {
 						if heartbeatErr != nil {
-							logger.Event(appLogCollectorFailed, appLogCodeCollectorHeartbeat, appCommandInteractive, 2)
+							logger.CoreFailure(heartbeatErr, appLogCollectorFailed, appLogCodeCollectorHeartbeat, appCommandInteractive, 2)
 						}
 						cancel()
 						return

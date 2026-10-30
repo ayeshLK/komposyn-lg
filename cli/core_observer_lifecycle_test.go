@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"io"
 	"os"
@@ -408,6 +409,47 @@ func TestCoreObserverExpectedCancellationAndLeaseOwnership(t *testing.T) {
 		if record.Event == "command.failed" && record.Code == "collector_poll" {
 			t.Fatalf("expected cancellation emitted generic failure: %+v", record)
 		}
+	}
+}
+
+func TestCoreObserverDeduplicatesEmbeddedLeaseAcquisitionFailure(t *testing.T) {
+	logDir := t.TempDir()
+	logger := newObservedTestLogger(t, logDir)
+	dbPath := filepath.Join(t.TempDir(), "usage.sqlite")
+	store, err := openStoreWithLog(dbPath, logger, appCommandInteractive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	triggerDB, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := triggerDB.Exec(`CREATE TRIGGER reject_collector_runtime BEFORE UPDATE ON collector_runtime BEGIN SELECT RAISE(ABORT, 'synthetic private lease failure'); END`); err != nil {
+		_ = triggerDB.Close()
+		t.Fatal(err)
+	}
+	if err := triggerDB.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := startInteractiveCollectorWithLogger(store, []tokenlogger.CollectorRoot{{Path: t.TempDir()}}, time.Second, logger); err == nil {
+		t.Fatal("embedded collector acquired a lease despite the rejecting trigger")
+	}
+	logger.Close()
+	records := managedCoreRecords(t, logDir)
+	coreFailures, genericAcquireFailures := 0, 0
+	for _, record := range records {
+		if record.Event == "core.diagnostic" && record.Code == "core_operation_failed" && record.CoreDetails["core_operation"] == "acquire_lease" {
+			coreFailures++
+		}
+		if record.Event == "collector.failed" && record.Code == "collector_acquire" {
+			genericAcquireFailures++
+		}
+	}
+	if coreFailures != 1 || genericAcquireFailures != 0 {
+		t.Fatalf("lease acquisition produced duplicate or missing failure representations: core=%d generic=%d records=%+v", coreFailures, genericAcquireFailures, records)
 	}
 }
 
