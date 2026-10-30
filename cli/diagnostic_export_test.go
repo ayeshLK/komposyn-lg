@@ -20,6 +20,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -84,7 +85,7 @@ func TestDiagnosticExportRequiresReviewedExplicitSelectionAndConsent(t *testing.
 	if err != nil || !bytes.Equal(data, preview.Bytes()) {
 		t.Fatalf("written envelope mismatch: %v", err)
 	}
-	if info, err := os.Stat(destination); err != nil || info.Mode().Perm() != 0o600 {
+	if info, err := os.Stat(destination); err != nil || (runtime.GOOS != "windows" && info.Mode().Perm() != 0o600) {
 		t.Fatalf("export permissions = %v, err=%v; want 0600", info, err)
 	}
 }
