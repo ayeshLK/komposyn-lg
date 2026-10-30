@@ -53,21 +53,21 @@ The [event and code catalogue](issue-57-cli-logging-coverage.md) defines the
 format-version-1 event names, controlled codes, and latest-poll versus
 run-cumulative counter scopes. The current development dependency on core
 v0.10.0 exposes the optional observer and typed-error APIs from core #163.
-The CLI adapter is in progress for #57 B. Core event records use the fixed
-`core.diagnostic` projection; the bounded observer reports loss as
-`core.diagnostic_loss`. The CLI validates contract-v1 events and omits subject,
-operation, run, and poll IDs, source positions, exact core timestamps, paths,
-and error text. `core_evidence_unavailable_reason` preserves core's bounded
-reason when evidence is unavailable. `core_counts_scope` labels core counters separately from the
-CLI's `latest_poll_*` and `run_cumulative_*` counters; core counts are decimal
-strings to preserve full uint64 values. Pre-Open failures use typed core
-classification where admitted; generic CLI classifications remain when core
-observation is unavailable, unsupported, disabled, or dropped. Same-operation
-duplicates are bounded and summarized. A core observer enqueue or local log
-queue enqueue does not prove disk persistence. Logs remain best-effort
-evidence, not an atomic outbox, an exactly-once stream, or an accounting
-authority. Core v0.10.0's 64-finding replay ring may count an evicted replay
-again and marks the affected persisted counter as truncated.
+The adapter uses the fixed `core.diagnostic` projection; the bounded observer
+reports loss as `core.diagnostic_loss`. The CLI validates contract-v1 events
+and omits subject, operation, run, and poll IDs, source positions, exact core
+timestamps, paths, and error text. `core_evidence_unavailable_reason` preserves
+core's bounded reason when evidence is unavailable. `core_counts_scope` labels
+core counters separately from the CLI's `latest_poll_*` and
+`run_cumulative_*` counters; core counts are decimal strings to preserve full
+uint64 values. Pre-Open failures use typed core classification where admitted;
+generic CLI classifications remain when core observation is unavailable,
+unsupported, disabled, or dropped. The CLI does not infer causes from error
+strings. Same-operation duplicates are bounded and summarized. A core observer
+enqueue or local log queue enqueue does not prove disk persistence. Core
+v0.10.0's 64-finding replay ring may count an evicted replay again and marks
+the affected persisted counter as truncated. Logs remain best-effort evidence,
+not an atomic outbox, an exactly-once stream, or an accounting authority.
 
 ## Size, rotation, and recovery
 
