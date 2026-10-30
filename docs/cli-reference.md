@@ -308,7 +308,7 @@ komposyn-lg diagnostics list [--review-state pending|reviewed|skipped]
   [--subject-reference <opaque-ref>] [--page-size <1-100>]
   [--continuation <token>] [--data-dir <path>] [--format text|json]
 komposyn-lg diagnostics show <problem-id> [--data-dir <path>] [--format text|json]
-komposyn-lg diagnostics review <problem-id> --state reviewed|skipped [--data-dir <path>]
+komposyn-lg diagnostics review <problem-id> --state reviewed|skipped --expected-revision <revision> [--data-dir <path>]
 ```
 
 These commands query persisted core diagnostic details; they do not scan
