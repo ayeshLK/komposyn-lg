@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.12.0](https://github.com/ayeshLK/komposyn-lg/compare/v0.11.0...v0.12.0) (2026-10-31)
+
+
+### Features
+
+* add bounded private local JSONL logging ([e771dc0](https://github.com/ayeshLK/komposyn-lg/commit/e771dc0448b0f256b29db091d3a911f8df5f5e82))
+* add bounded private local JSONL logging ([1297700](https://github.com/ayeshLK/komposyn-lg/commit/1297700b6c1812f4e5c22fd6ccfe80c8ffe71036))
+* add reviewed diagnostic export service ([#67](https://github.com/ayeshLK/komposyn-lg/issues/67)) ([0b7407e](https://github.com/ayeshLK/komposyn-lg/commit/0b7407e84c93160826b6e48a3ee547ec45315af0))
+* inspect and review persisted diagnostic details ([#65](https://github.com/ayeshLK/komposyn-lg/issues/65)) ([a78ae09](https://github.com/ayeshLK/komposyn-lg/commit/a78ae09b4eb8c340dc20f97c6187d732605e3243))
+* integrate structured core diagnostics into local logs ([#66](https://github.com/ayeshLK/komposyn-lg/issues/66)) ([0038d06](https://github.com/ayeshLK/komposyn-lg/commit/0038d06dd86eadf308e31ac25112827260d50039))
+* **logging:** instrument CLI operational paths ([1d04d49](https://github.com/ayeshLK/komposyn-lg/commit/1d04d49f8c62acf5ee1911ea0ba0b2149ff476ce))
+* **logging:** instrument CLI-owned operational paths ([b897620](https://github.com/ayeshLK/komposyn-lg/commit/b897620f6a6d99e70c55cc507e45bb906dd234d3))
+* **logs:** add bounded local log inspection ([8598952](https://github.com/ayeshLK/komposyn-lg/commit/859895255543a9acb6f73e0e08b00fecd5e6d692))
+* **logs:** add bounded local log inspection ([fd9c5d8](https://github.com/ayeshLK/komposyn-lg/commit/fd9c5d804063d60b104a90f8213a57eea0efa6d9))
+* wire reviewed diagnostic export commands ([#68](https://github.com/ayeshLK/komposyn-lg/issues/68)) ([2cab203](https://github.com/ayeshLK/komposyn-lg/commit/2cab203e44dad6dfa1bb8adb8e444614068a3fba))
+
+
+### Bug Fixes
+
+* **logging:** address PR 62 review findings ([0689cec](https://github.com/ayeshLK/komposyn-lg/commit/0689cec89c7389783769ee859c4187bc38133274))
+* **logging:** record interactive lookup failures ([cd63bbd](https://github.com/ayeshLK/komposyn-lg/commit/cd63bbd011f0d340aa68d674fe461b50975bc3ad))
+* **logs:** honor bounded inspection review feedback ([0985ebb](https://github.com/ayeshLK/komposyn-lg/commit/0985ebbc16097905fc3794b688d741e901bf7157))
+* preserve watch shutdown and log suppression evidence ([454487c](https://github.com/ayeshLK/komposyn-lg/commit/454487c91bc82f8d84ceb2d0c9dcb07aa6cccd77))
+
 ## [0.11.0](https://github.com/ayeshLK/komposyn-lg/compare/v0.10.0...v0.11.0) (2026-10-24)
 
 
