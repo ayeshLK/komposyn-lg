@@ -1,5 +1,7 @@
-github.com/ayeshLK/komposyn v0.10.0 h1:1DmsTfhStyGOH3zKsgXE7GkjARLODukV0tfY/fcJQcs=
-github.com/ayeshLK/komposyn v0.10.0/go.mod h1:11zA8AsAfxJE7V/Dud/iT0iHzQWH696eP8OiYwn1q30=
+github.com/ayeshLK/komposyn v0.13.1 h1:MW00I/K/m1qj/N/OnzyCXV8NdbaJXFX+R3j6uoEB4F4=
+github.com/ayeshLK/komposyn v0.13.1/go.mod h1:nE2MKNJQgqcQn3rJg51ydbRIAJ8evvJXPgN0lUHvH8U=
+github.com/ayeshLK/lib-disruptor v0.6.0 h1:ShU1UkFxkZ7tECF8ozo9YfipD91M3XR0DkilK4QbtBU=
+github.com/ayeshLK/lib-disruptor v0.6.0/go.mod h1:K8F1NEAilO0oYCKa9wq95EFkC4OWPO/2AtB1Q2HuowU=
 github.com/chzyer/logex v1.2.1 h1:XHDu3E6q+gdHgsdTPH6ImJMIp436vR6MPtH8gP05QzM=
 github.com/chzyer/logex v1.2.1/go.mod h1:JLbx6lG2kDbNRFnfkgvh4eRJRPX1QCoOIWomwysCBrQ=
 github.com/chzyer/readline v1.5.1 h1:upd/6fQk4src78LMRzh5vItIt361/o4uq553V8B5sGI=
