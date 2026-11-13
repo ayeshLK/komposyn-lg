@@ -131,7 +131,7 @@ counts, and events outside a known effective interval remain unknown. JSON/CSV
 include unknown reason and per-reason counts, catalog version/source, matched
 model selector/effective interval, and separate reported and estimated values.
 Catalog entries and review dates are maintained in
-[core pricing catalog](https://github.com/ayeshLK/komposyn/blob/master/plugins/library/token-logger/pricing-catalog.json); update them only in a
+[core pricing catalog](https://github.com/ayeshLK/komposyn/blob/master/plugins/token-logger/pricing-catalog.json); update them only in a
 reviewed repository change against the linked official provider documentation.
 
 ### Existing events after an upgrade

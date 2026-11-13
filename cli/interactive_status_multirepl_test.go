@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	tokenlogger "github.com/ayeshLK/komposyn/plugins/library/token-logger"
+	tokenlogger "github.com/ayeshLK/komposyn/plugins/token-logger"
 )
 
 func TestInteractiveCollectorSessionDescriptionUsesCurrentRuntime(t *testing.T) {

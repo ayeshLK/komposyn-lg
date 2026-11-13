@@ -24,7 +24,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	tokenlogger "github.com/ayeshLK/komposyn/plugins/library/token-logger"
+	tokenlogger "github.com/ayeshLK/komposyn/plugins/token-logger"
 )
 
 const defaultDiagnosticPageSize = 20

@@ -13,7 +13,7 @@ Follow the platform prerequisites and PATH setup in
 [Installation](installation.md); its installers verify both the SHA-256
 checksum and Cosign signature before installing.
 
-Building from source is optional and requires Go 1.26.9 or newer:
+Building from source is optional and requires Go 1.26.11 or newer:
 
 ```text
 git clone https://github.com/ayeshLK/komposyn-lg.git

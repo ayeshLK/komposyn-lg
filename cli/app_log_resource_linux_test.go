@@ -31,7 +31,7 @@ import (
 	"testing"
 	"time"
 
-	tokenlogger "github.com/ayeshLK/komposyn/plugins/library/token-logger"
+	tokenlogger "github.com/ayeshLK/komposyn/plugins/token-logger"
 )
 
 // TestIssue56ProductionLoggerResourceComparison is an opt-in, serialized

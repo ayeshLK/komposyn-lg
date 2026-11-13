@@ -14,7 +14,7 @@
 
 package main
 
-import tokenlogger "github.com/ayeshLK/komposyn/plugins/library/token-logger"
+import tokenlogger "github.com/ayeshLK/komposyn/plugins/token-logger"
 
 // cliVersion is injected independently from the core version by release
 // builds. Standalone releases use the CLI tag and the pinned core module version.

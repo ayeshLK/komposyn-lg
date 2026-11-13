@@ -28,7 +28,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ayeshLK/komposyn/plugins/library/token-logger"
+	"github.com/ayeshLK/komposyn/plugins/token-logger"
 	"github.com/chzyer/readline"
 	"github.com/creack/pty/v2"
 	"golang.org/x/term"

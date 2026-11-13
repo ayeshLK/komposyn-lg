@@ -10,9 +10,9 @@ permanent `replace`, and keep domain behavior in core. Preserve the library/CLI
 boundary and the protocol-v1 contract. Do not capture prompts, responses,
 credentials, or provider source content, and do not add telemetry.
 
-The latest published CLI release, v0.10.0, pins core v0.9.0 and supports
-schema 17. The current development source pins published core v0.10.0, which
-supports schema 18 and is the minimum core version for the next CLI release.
+The latest published CLI release, v0.12.0, pins core v0.10.0 and supports
+schema 18. The current development source pins published core v0.17.0, which
+supports schema 19 and is the minimum core version for the next CLI release.
 Earlier release
 mappings are recorded in [core compatibility and coordinated security
 releases](docs/core-compatibility-security.md), which also describes dependency

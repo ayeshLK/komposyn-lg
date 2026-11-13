@@ -110,7 +110,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: 1.26.9
+          go-version: 1.26.11
           cache: true
 
       - name: Resolve validated core version
@@ -146,7 +146,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: 1.26.9
+          go-version: 1.26.11
           cache: true
 
       - name: Build release artifacts
@@ -220,7 +220,7 @@ jobs:
       - name: Set up Go for archive metadata inspection
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v5
         with:
-          go-version: 1.26.9
+          go-version: 1.26.11
 
       - name: Install Cosign
         if: matrix.os != 'windows-11-arm'
@@ -232,7 +232,7 @@ jobs:
         if: matrix.os == 'windows-11-arm'
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v5
         with:
-          go-version: 1.26.9
+          go-version: 1.26.11
 
       - name: Install pinned Cosign natively on Windows ARM64
         if: matrix.os == 'windows-11-arm'
@@ -393,7 +393,7 @@ jobs:
       - name: Set up Go for Cosign
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v5
         with:
-          go-version: 1.26.9
+          go-version: 1.26.11
       - name: Install Cosign
         if: matrix.os != 'windows-11-arm'
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2

@@ -1,7 +1,8 @@
 # Diagnostic inspection and reviewed export contract
 
-Core #112 and #163 are complete and their public APIs are available in
-published core v0.10.0. The CLI inspection/review increment is implemented by
+Core #112 and #163 are complete; their public APIs were first released in
+core v0.10.0 and remain available in the current v0.17.0 pin. The CLI
+inspection/review increment is implemented by
 `diagnostics list|show|review`; reviewed export is available through
 `diagnostics export`. The CLI must not use direct diagnostic SQL, copy core
 summary logic, or commit a temporary module replacement.
@@ -24,8 +25,9 @@ and review compare-and-set to core. The contract must preserve:
 - Review as a local action only. Review does not transmit anything and does
   not imply that the underlying condition was corrected.
 
-The CLI consumes the published v0.10.0 core contract. Core contract version 1
-preserves exact uint64 counters as decimal strings, saturation and truncation,
+The CLI consumes core diagnostic contract version 1, introduced in v0.10.0
+and retained by v0.17.0. It preserves exact uint64 counters as decimal strings,
+saturation and truncation,
 and distinct latest-poll, latest-observed-run, and lifetime scopes. A bounded
 64-ID replay window may count an evicted replay again and marks projected
 counters truncated. Opening the normal store may perform migrations or

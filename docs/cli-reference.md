@@ -197,9 +197,9 @@ Inspection itself does not read provider files, start collection, repair
 identities, or access the network. `Store.Open` can still perform its existing
 migration/catalog synchronization. Stable digests and exact metrics may
 identify data, so inspection JSON is not automatically safe to publish.
-This command requires KompoSyn core v0.10.0 or newer in the current development
+This command requires KompoSyn core v0.17.0 or newer in the current development
 source; that is the dependency pin and minimum core floor for the next CLI
-release. The latest published CLI v0.10.0 uses core v0.9.0. Temporary candidate
+release. The latest published CLI v0.12.0 uses core v0.10.0. Temporary candidate
 overrides are development validation only.
 
 These commands browse stable local resources. List JSON and CSV have

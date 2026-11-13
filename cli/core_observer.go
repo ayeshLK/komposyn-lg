@@ -17,7 +17,7 @@ package main
 import (
 	"time"
 
-	tokenlogger "github.com/ayeshLK/komposyn/plugins/library/token-logger"
+	tokenlogger "github.com/ayeshLK/komposyn/plugins/token-logger"
 )
 
 const coreObserverDrainBudget = 100 * time.Millisecond

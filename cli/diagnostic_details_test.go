@@ -25,7 +25,7 @@ import (
 	"testing"
 	"time"
 
-	tokenlogger "github.com/ayeshLK/komposyn/plugins/library/token-logger"
+	tokenlogger "github.com/ayeshLK/komposyn/plugins/token-logger"
 )
 
 func seedDetailedDiagnostics(t *testing.T, dataDir string) []tokenlogger.DiagnosticDetail {
