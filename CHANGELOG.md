@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.13.0](https://github.com/ayeshLK/komposyn-lg/compare/v0.12.0...v0.13.0) (2026-11-13)
+
+
+### Features
+
+* integrate KompoSyn core v0.17.0 ([#78](https://github.com/ayeshLK/komposyn-lg/pull/78)) ([54fafc1](https://github.com/ayeshLK/komposyn-lg/commit/54fafc1c94c392a6a65b82c12092b79d6866809f))
+
+
+### Compatibility and upgrade notes
+
+* This CLI release pins KompoSyn core v0.17.0. CLI and core versions remain independent.
+* Core v0.16.0 migrates databases from schema 18 to schema 19 to record Codex recovery allocation history. Opening an existing database creates and verifies a pre-migration backup. Older CLI binaries that support only earlier schemas cannot open the upgraded database; restore a compatible backup to return to an older binary. There is no automatic down-migration.
+
 ## [0.12.0](https://github.com/ayeshLK/komposyn-lg/compare/v0.11.0...v0.12.0) (2026-10-31)
 
 
