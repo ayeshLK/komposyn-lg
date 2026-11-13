@@ -18,12 +18,15 @@ not necessarily the same as another historical backup. Published mappings are
 CLI v0.8.1/core v0.7.1 for schema 15, CLI v0.8.2 and v0.9.0/core v0.8.0
 for schema 16, and CLI v0.10.0/core v0.9.0 for schema 17. CLI v0.11.0 and
 v0.12.0 use core v0.10.0 for schema 18. The current development source uses
-core v0.17.0 and continues to support schema 18; this package relocation does
-not add a migration. Use the backup's recorded source schema and
-core version when selecting a recovery executable; not every older backup is
-schema 15. Core verifies the pre-migration backup before migration begins.
-An older CLI/core that supports only schema 17 refuses schema 18 without
-mutation. Migration is forward-only; there is no automatic down-migration.
+core v0.17.0 and supports schema 19; opening a schema-18 database migrates it
+after a verified backup. Core v0.16.0 introduced that migration, while core
+v0.17.0 itself relocates the package without another migration. Use the
+backup's recorded source schema and core version when selecting a recovery
+executable; not every older backup is schema 15. Core verifies the
+pre-migration backup before migration begins.
+The latest published CLI v0.12.0/core v0.10.0 supports schema 18 and refuses
+schema 19 without mutation. Migration is forward-only; there is no automatic
+down-migration.
 
 ## Restore or recover from a migration
 
@@ -41,4 +44,4 @@ for schema behavior and [upgrades](upgrades.md) for installer and collector
 lifecycle details.
 
 The core library describes its migration backup format and APIs in the
-[core v0.10.0 migration backup guide](https://github.com/ayeshLK/komposyn/blob/v0.10.0/docs/migration-backups.md).
+[core v0.17.0 migration backup guide](https://github.com/ayeshLK/komposyn/blob/v0.17.0/docs/migration-backups.md).

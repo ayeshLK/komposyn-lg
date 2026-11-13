@@ -6,11 +6,12 @@ uses the requested CLI tag for `cli_version` and the exact pinned core module
 version for core `plugin_version`. The latest published CLI is v0.12.0 and
 pins core v0.10.0 (schema 18). The current development source pins published
 core v0.17.0, setting the minimum core floor for the next CLI release. The
-Token Logger relocation in v0.17.0 preserves schema 18 and data locations;
-core v0.10.0 originally migrated schema 17 to 18 with persisted diagnostic
-details. Core v0.8.0 migrated schema 15 to 16, and core v0.9.0 migrated 16 to
-17 with recorded project-name origin. The version map and historical schema
-compatibility are in [core compatibility](core-compatibility-security.md).
+CLI supports schema 19. Core v0.16.0 migrated schema 18 to 19 with Codex
+recovery allocation history; the v0.17.0 package relocation adds no further
+schema change. Core v0.10.0 originally migrated schema 17 to 18 with persisted
+diagnostic details. Core v0.8.0 migrated schema 15 to 16, and core v0.9.0
+migrated 16 to 17 with recorded project-name origin. The version map and
+historical schema compatibility are in [core compatibility](core-compatibility-security.md).
 
 The release preparation job resolves the expected core version from the exact
 validated release commit using `scripts/resolve-release-core-version.sh`. That
