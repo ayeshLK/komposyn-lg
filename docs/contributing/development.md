@@ -2,10 +2,10 @@
 
 ## Local setup
 
-Install Go 1.26.9 or newer and work from a feature branch. This module is
+Install Go 1.26.11 or newer and work from a feature branch. This module is
 `github.com/ayeshLK/komposyn-lg`; executable source and tests live in the
 top-level `cli/` directory. The module requires
-`github.com/ayeshLK/komposyn v0.10.0` or newer and must not use a permanent
+`github.com/ayeshLK/komposyn v0.17.0` or newer and must not use a permanent
 `replace` directive.
 
 Keep local build output in the ignored `bin/` directory. Use a fresh temporary
@@ -47,7 +47,7 @@ with a fresh output directory. Local builds do not create tags:
 
 ```sh
 bash -n scripts/*.sh
-make release VERSION=v0.10.0 OUTPUT_DIR=/tmp/komposyn-lg-release-test
+make release VERSION=0.0.0-test OUTPUT_DIR=/tmp/komposyn-lg-release-test
 bash scripts/verify-release.sh /tmp/komposyn-lg-release-test
 ```
 

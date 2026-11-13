@@ -33,7 +33,7 @@ import (
 	"time"
 	_ "time/tzdata"
 
-	"github.com/ayeshLK/komposyn/plugins/library/token-logger"
+	"github.com/ayeshLK/komposyn/plugins/token-logger"
 	"github.com/chzyer/readline"
 	"github.com/mattn/go-isatty"
 	"golang.org/x/term"

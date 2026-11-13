@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	tokenlogger "github.com/ayeshLK/komposyn/plugins/library/token-logger"
+	tokenlogger "github.com/ayeshLK/komposyn/plugins/token-logger"
 )
 
 func copyCoreObserverFixture(t *testing.T, provider, target string, malformed bool) string {

@@ -196,7 +196,7 @@ Bug reports, documentation improvements, and code contributions are welcome.
 Start with [CONTRIBUTING.md](CONTRIBUTING.md) and the
 [development guide](docs/contributing/development.md) for setup and checks.
 
-To build from source, install Go **1.26.9 or newer**:
+To build from source, install Go **1.26.11 or newer**:
 
 ```sh
 git clone https://github.com/ayeshLK/komposyn-lg.git

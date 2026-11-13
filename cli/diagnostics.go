@@ -19,7 +19,7 @@ import (
 	"net/url"
 	"strings"
 
-	tokenlogger "github.com/ayeshLK/komposyn/plugins/library/token-logger"
+	tokenlogger "github.com/ayeshLK/komposyn/plugins/token-logger"
 )
 
 func recordDiagnostic(store *tokenlogger.Store, message, category string) (tokenlogger.Diagnostic, error) {

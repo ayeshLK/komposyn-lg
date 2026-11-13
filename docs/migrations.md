@@ -6,9 +6,10 @@ when the selected core supports them. A newer unsupported schema is rejected
 without mutation. Do not manually edit the migration ledger or reuse a migrated
 database with an older executable.
 
-The latest published mapping remains CLI v0.10.0/core v0.9.0 with schema 17.
-The current development source pins published core v0.10.0 for the next CLI
-release and supports schema 18. Core v0.8.0 advanced schema 15 to 16 with
+The latest published mapping is CLI v0.12.0/core v0.10.0 with schema 18. The
+current development source pins published core v0.17.0 for the next CLI
+release and continues to support schema 18; the package relocation does not
+add a migration. Core v0.8.0 advanced schema 15 to 16 with
 private append checkpoints; core v0.9.0 advanced schema 16 to 17 with recorded
 project-name origin; core v0.10.0 advances schema 17 to 18 with bounded
 persisted diagnostic details and a per-database diagnostic namespace key.

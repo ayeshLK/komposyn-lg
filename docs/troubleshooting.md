@@ -128,9 +128,9 @@ repair identity, or use the network. Opening the store can still apply its
 existing migrations and synchronize its embedded pricing catalog. Digests and
 exact activity values may identify local data; inspection JSON is not
 automatically safe to publish. The current development source requires
-KompoSyn core v0.10.0 or newer; this is the dependency pin and minimum core
-floor for the next CLI release. The latest published CLI v0.10.0 uses core
-v0.9.0. A local candidate override is not release validation.
+KompoSyn core v0.17.0 or newer; this is the dependency pin and minimum core
+floor for the next CLI release. The latest published CLI v0.12.0 uses core
+v0.10.0. A local candidate override is not release validation.
 
 ## Background collector is stopped or stale
 

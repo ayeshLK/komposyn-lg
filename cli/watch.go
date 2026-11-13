@@ -27,7 +27,7 @@ import (
 	"syscall"
 	"time"
 
-	tokenlogger "github.com/ayeshLK/komposyn/plugins/library/token-logger"
+	tokenlogger "github.com/ayeshLK/komposyn/plugins/token-logger"
 )
 
 const watchUsage = "usage: komposyn-lg watch {add|remove|list|start|status|stop|foreground} ..."

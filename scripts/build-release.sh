@@ -15,7 +15,7 @@ if [[ -z "$output_dir" || "$output_dir" == "/" || "$output_dir" == "." || -L "$o
 	exit 1
 fi
 core_version="$(bash "$root_dir/scripts/resolve-release-core-version.sh")"
-ldflags="-s -w -X github.com/ayeshLK/komposyn/plugins/library/token-logger.Version=${core_version} -X main.cliVersion=${version}"
+ldflags="-s -w -X github.com/ayeshLK/komposyn/plugins/token-logger.Version=${core_version} -X main.cliVersion=${version}"
 
 mkdir -p "$output_dir"
 if [[ -n "$(find "$output_dir" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then

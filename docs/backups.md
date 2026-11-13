@@ -16,9 +16,10 @@ files protected with the rest of the data until the upgrade is validated. The
 backup records its source schema, target schema, and core version; its schema is
 not necessarily the same as another historical backup. Published mappings are
 CLI v0.8.1/core v0.7.1 for schema 15, CLI v0.8.2 and v0.9.0/core v0.8.0
-for schema 16, and CLI v0.10.0/core v0.9.0 for schema 17. The current
-development source uses core v0.10.0, which migrates schema 17 to 18; it is
-not yet a published CLI mapping. Use the backup's recorded source schema and
+for schema 16, and CLI v0.10.0/core v0.9.0 for schema 17. CLI v0.11.0 and
+v0.12.0 use core v0.10.0 for schema 18. The current development source uses
+core v0.17.0 and continues to support schema 18; this package relocation does
+not add a migration. Use the backup's recorded source schema and
 core version when selecting a recovery executable; not every older backup is
 schema 15. Core verifies the pre-migration backup before migration begins.
 An older CLI/core that supports only schema 17 refuses schema 18 without

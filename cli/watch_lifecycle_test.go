@@ -26,7 +26,7 @@ import (
 	"testing"
 	"time"
 
-	tokenlogger "github.com/ayeshLK/komposyn/plugins/library/token-logger"
+	tokenlogger "github.com/ayeshLK/komposyn/plugins/token-logger"
 )
 
 const lifecycleAppendRecord = `{"type":"event_msg","id":"lifecycle-token-count-3","timestamp":"2026-10-11T10:00:06Z","payload":{"type":"token_count","session_id":"codex-session-fixture","info":{"total_token_usage":{"input_tokens":200,"cached_input_tokens":30,"output_tokens":60,"reasoning_output_tokens":15,"total_tokens":260}}}}`
