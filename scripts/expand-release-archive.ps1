@@ -6,4 +6,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-Expand-Archive -LiteralPath $ArchivePath -DestinationPath $DestinationPath -Force
+# Callers provide a fresh destination directory. Omitting -Force keeps this
+# compatible with Windows PowerShell's .NET Framework ZipFile overloads and
+# avoids replacing anything if the precondition is violated.
+Expand-Archive -LiteralPath $ArchivePath -DestinationPath $DestinationPath
