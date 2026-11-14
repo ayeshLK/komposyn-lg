@@ -40,8 +40,15 @@ try {
     New-Item -ItemType Directory -Path $quotedArchiveDir, $quotedDestination -Force | Out-Null
     $quotedArchive = Join-Path $quotedArchiveDir 'fixture archive.zip'
     Compress-Archive -Path (Join-Path $payloadDir 'komposyn-lg.exe') -DestinationPath $quotedArchive
-    & (Join-Path $PSScriptRoot 'expand-release-archive.ps1') `
+    # Exercise the compatibility path used when Git Bash has no unzip binary.
+    # Windows PowerShell 5.1 lacks the three-argument ZipFile overload selected
+    # by Expand-Archive -Force on some runner images.
+    $windowsPowerShell = (Get-Command powershell.exe -ErrorAction Stop).Source
+    & $windowsPowerShell -NoProfile -File (Join-Path $PSScriptRoot 'expand-release-archive.ps1') `
         -ArchivePath $quotedArchive -DestinationPath $quotedDestination
+    if ($LASTEXITCODE -ne 0) {
+        throw "Windows PowerShell archive extraction failed with exit code $LASTEXITCODE"
+    }
     if ((Get-Content -Raw (Join-Path $quotedDestination 'komposyn-lg.exe')).TrimEnd() -ne 'fixture-binary') {
         throw 'PowerShell archive extraction failed for a path containing spaces and apostrophes'
     }
