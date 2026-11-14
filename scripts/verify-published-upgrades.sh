@@ -52,7 +52,7 @@ verify_release_assets() {
 		if command -v unzip >/dev/null 2>&1; then
 			unzip -q "$directory/$asset" -d "$directory/extracted" || return
 		else
-			powershell.exe -NoProfile -Command "Expand-Archive -LiteralPath '$(cygpath -w "$directory/$asset")' -DestinationPath '$(cygpath -w "$directory/extracted")' -Force" || return
+			powershell.exe -NoProfile -Command "Expand-Archive -LiteralPath '$(cygpath -w "$directory/$asset")' -DestinationPath '$(cygpath -w "$directory/extracted")'" || return
 		fi
 	else
 		tar -xzf "$directory/$asset" -C "$directory/extracted" || return
