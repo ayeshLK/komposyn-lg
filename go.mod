@@ -11,8 +11,8 @@ require (
 	github.com/creack/pty/v2 v2.0.1
 	github.com/mattn/go-isatty v0.0.24
 	github.com/mattn/go-runewidth v0.0.31
-	golang.org/x/sys v0.49.0
-	golang.org/x/term v0.47.0
+	golang.org/x/sys v0.50.0
+	golang.org/x/term v0.48.0
 	modernc.org/sqlite v1.61.0
 )
 
