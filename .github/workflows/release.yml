@@ -108,7 +108,7 @@ jobs:
         run: echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version: 1.26.11
           cache: true
@@ -144,7 +144,7 @@ jobs:
           ref: ${{ needs.prepare.outputs.commit }}
 
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version: 1.26.11
           cache: true
@@ -218,7 +218,7 @@ jobs:
           path: dist
 
       - name: Set up Go for archive metadata inspection
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v5
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v5
         with:
           go-version: 1.26.11
 
@@ -230,7 +230,7 @@ jobs:
 
       - name: Set up Go for native Windows ARM64 Cosign build
         if: matrix.os == 'windows-11-arm'
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v5
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v5
         with:
           go-version: 1.26.11
 
@@ -391,7 +391,7 @@ jobs:
           name: release-artifacts
           path: dist
       - name: Set up Go for Cosign
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v5
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v5
         with:
           go-version: 1.26.11
       - name: Install Cosign
